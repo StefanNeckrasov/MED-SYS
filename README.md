@@ -24,8 +24,8 @@
 1. Убедитесь, что установлен Python 3.7.9 или выше.
 2. Склонируйте репозиторий:
    ```bash
-   git clone https://github.com/yourusername/medical-info-system.git
-   cd medical-info-system
+   git clone https://github.com/StefanNeckrasov/MED-SYS.git
+   cd MED-SY
    ```
 3. Запустите приложение:
    ```bash
@@ -33,7 +33,7 @@
    ```
    > Никаких дополнительных зависимостей не требуется – все модули входят в стандартную библиотеку Python.
 
-4. При необходимости можно собрать исполняемый файл с помощью PyInstaller:
+4. При необходимости можно собрать исполняемый файл с помощью PyInstaller или auto-py-to-exe:
    ```bash
    pip install pyinstaller
    pyinstaller --onefile --windowed --add-data "database.py;." --add-data "patient_card.py;." --add-data "validators.py;." main.py
@@ -78,8 +78,7 @@ medical-info-system/
 ## Требования к системе
 
 - Операционная система: Windows, Linux, macOS (тестировалось на Windows)
-- Python 3.6+
-- Никаких внешних библиотек
+- Python 3.7.9+
 
 ## Примечания
 
