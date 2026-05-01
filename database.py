@@ -34,7 +34,8 @@ class Database:
                     age INTEGER,
                     gender TEXT,
                     diagnosis TEXT,
-                    treatment_date TEXT,
+                    treatment_start_date TEXT,
+                    treatment_end_date TEXT,
                     department TEXT,
                     pressure_value REAL,
                     pressure_unit TEXT,
@@ -42,7 +43,6 @@ class Database:
                     sessions_count INTEGER DEFAULT 0,
                     courses_count INTEGER DEFAULT 0,
                     indication TEXT,
-                    complexity TEXT,
                     complications TEXT,
                     effect TEXT,
                     notes TEXT
@@ -59,9 +59,10 @@ class Database:
             self.cursor.execute('''
                 INSERT INTO patients (
                     full_name, case_number, birth_year, age, gender, diagnosis,
-                    treatment_date, department, pressure_value, pressure_unit,
+                    treatment_start_date, treatment_end_date, department,
+                    pressure_value, pressure_unit,
                     treatment_result, sessions_count, courses_count,
-                    indication, complexity, complications, effect, notes
+                    indication, complications, effect, notes
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', patient_data)
             self.conn.commit()
@@ -92,11 +93,11 @@ class Database:
             self.cursor.execute('''
                 UPDATE patients SET
                     full_name = ?, case_number = ?, birth_year = ?, age = ?,
-                    gender = ?, diagnosis = ?, treatment_date = ?,
+                    gender = ?, diagnosis = ?,
+                    treatment_start_date = ?, treatment_end_date = ?,
                     department = ?, pressure_value = ?, pressure_unit = ?,
                     treatment_result = ?, sessions_count = ?, courses_count = ?,
-                    indication = ?, complexity = ?, complications = ?,
-                    effect = ?, notes = ?
+                    indication = ?, complications = ?, effect = ?, notes = ?
                 WHERE id = ?
             ''', (*patient_data, patient_id))
             self.conn.commit()

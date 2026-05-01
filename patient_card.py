@@ -54,7 +54,7 @@ class PatientCardWindow:
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Определение полей (аналогично main)
+        # Поля (полный список, без категории сложности)
         labels = [
             ("ID пациента:", "readonly"),
             ("Номер истории болезни:", "entry"),
@@ -63,16 +63,22 @@ class PatientCardWindow:
             ("Возраст (лет):", "entry"),
             ("Пол:", ["М", "Ж", "Другой"]),
             ("Диагноз:", "text"),
-            ("Дата лечения (ДД-ММ-ГГГГ):", "entry"),
-            ("Отделение:", "entry"),
+            ("Дата начала лечения (ДД-ММ-ГГГГ):", "entry"),
+            ("Дата окончания лечения (ДД-ММ-ГГГГ):", "entry"),
+            ("Отделение:", ["1 реанимационное", "2 реанимационное", "3 реанимационное",
+                           "1 хирургическое", "2 хирургическое", "3 хирургическое",
+                           "1 урологическое", "2 урологическое", "нейрохирургическое",
+                           "колопроктологическое", "травматолог ортопедическое",
+                           "гинекологическое", "оториноларингологическое",
+                           "отделение челюстно-лицевой хирургии", "офтальмологическое",
+                           "амбулаторное"]),
             ("Давление (число):", "pressure"),
             ("Показания к использованию:", ["Плановое", "Срочное"]),
             ("Результат лечения:", "entry"),
             ("Количество сеансов:", "entry"),
-            ("Количество курсов:", "entry"),
-            ("Категория сложности:", "entry"),
-            ("Осложнения:", "entry"),
-            ("Эффект:", "entry"),
+            ("Номер курса:", "entry"),
+            ("Осложнения:", ["нет", "есть", "бароевстахеит", "бароотит", "кислородная интоксикация", "поражение лёгких"]),
+            ("Эффект:", ["хороший", "удовлетворительный", "без эффекта", "отрицательный", "неопределённый"]),
             ("Примечания:", "text"),
         ]
 
@@ -125,7 +131,6 @@ class PatientCardWindow:
                   bg="#6c757d", fg="white", font=("Segoe UI", 11, "bold"),
                   relief="flat", width=15, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
 
-        # Прокрутка мыши
         def on_mousewheel(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         canvas.bind_all("<MouseWheel>", on_mousewheel)
@@ -147,22 +152,22 @@ class PatientCardWindow:
             self._set_entry("Возраст (лет):", p[4])
             self._set_combo("Пол:", p[5])
             self._set_text("Диагноз:", p[6])
-            self._set_entry("Дата лечения (ДД-ММ-ГГГГ):", p[7])
-            self._set_entry("Отделение:", p[8])
-            if p[9] is not None and p[10] is not None:
+            self._set_entry("Дата начала лечения (ДД-ММ-ГГГГ):", p[7])
+            self._set_entry("Дата окончания лечения (ДД-ММ-ГГГГ):", p[8])
+            self._set_combo("Отделение:", p[9])
+            if p[10] is not None and p[11] is not None:
                 self.entries["Давление (число):"][0].delete(0, tk.END)
-                self.entries["Давление (число):"][0].insert(0, str(p[9]))
-                self.entries["Давление (число):"][1].set(p[10])
+                self.entries["Давление (число):"][0].insert(0, str(p[10]))
+                self.entries["Давление (число):"][1].set(p[11])
             else:
                 self.entries["Давление (число):"][0].delete(0, tk.END)
                 self.entries["Давление (число):"][1].set("")
-            self._set_combo("Показания к использованию:", p[14])
-            self._set_entry("Результат лечения:", p[11])
-            self._set_entry("Количество сеансов:", p[12] if p[12] else 0)
-            self._set_entry("Количество курсов:", p[13] if p[13] else 0)
-            self._set_entry("Категория сложности:", p[15])
-            self._set_entry("Осложнения:", p[16])
-            self._set_entry("Эффект:", p[17])
+            self._set_combo("Показания к использованию:", p[15])
+            self._set_entry("Результат лечения:", p[12])
+            self._set_entry("Количество сеансов:", p[13] if p[13] else 0)
+            self._set_entry("Номер курса:", p[14] if p[14] else 0)
+            self._set_combo("Осложнения:", p[16])
+            self._set_combo("Эффект:", p[17])
             self._set_text("Примечания:", p[18])
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка при загрузке данных: {e}")
@@ -192,7 +197,8 @@ class PatientCardWindow:
             age_str = self.entries["Возраст (лет):"].get().strip()
             gender = self.entries["Пол:"].get().strip()
             diagnosis = self._get_text("Диагноз:")
-            treatment_date = self.entries["Дата лечения (ДД-ММ-ГГГГ):"].get().strip()
+            treatment_start_date = self.entries["Дата начала лечения (ДД-ММ-ГГГГ):"].get().strip()
+            treatment_end_date = self.entries["Дата окончания лечения (ДД-ММ-ГГГГ):"].get().strip()
             department = self.entries["Отделение:"].get().strip()
             val_entry, unit_combo = self.entries["Давление (число):"]
             pressure_str = val_entry.get().strip()
@@ -200,27 +206,34 @@ class PatientCardWindow:
             indication = self.entries["Показания к использованию:"].get().strip()
             treatment_result = self.entries["Результат лечения:"].get().strip()
             sessions_str = self.entries["Количество сеансов:"].get().strip()
-            courses_str = self.entries["Количество курсов:"].get().strip()
-            complexity = self.entries["Категория сложности:"].get().strip()
+            courses_str = self.entries["Номер курса:"].get().strip()
             complications = self.entries["Осложнения:"].get().strip()
             effect = self.entries["Эффект:"].get().strip()
             notes = self._get_text("Примечания:")
 
-            if not full_name or not diagnosis or not treatment_date:
-                messagebox.showerror("Ошибка", "ФИО, диагноз и дата лечения обязательны.")
+            if not full_name or not diagnosis:
+                messagebox.showerror("Ошибка", "ФИО и диагноз обязательны.")
                 return
+            if not treatment_start_date:
+                messagebox.showerror("Ошибка", "Введите дату начала лечения.")
+                return
+
             if birth_year_str and not Validators.validate_year(birth_year_str):
                 messagebox.showerror("Ошибка", "Год рождения должен быть целым числом от 1900 до 2100.")
                 return
             if age_str and not Validators.validate_age(age_str):
                 messagebox.showerror("Ошибка", "Возраст должен быть целым числом от 0 до 150.")
                 return
-            if not Validators.validate_date(treatment_date):
-                messagebox.showerror("Ошибка", "Дата лечения должна быть в формате ДД-ММ-ГГГГ.")
-                return
 
             birth_year = int(birth_year_str) if birth_year_str else None
             age = int(age_str) if age_str else None
+
+            if not Validators.validate_date(treatment_start_date):
+                messagebox.showerror("Ошибка", "Дата начала лечения должна быть в формате ДД-ММ-ГГГГ.")
+                return
+            if treatment_end_date and not Validators.validate_date(treatment_end_date):
+                messagebox.showerror("Ошибка", "Дата окончания лечения должна быть в формате ДД-ММ-ГГГГ.")
+                return
 
             pressure_value = None
             if pressure_str:
@@ -241,9 +254,10 @@ class PatientCardWindow:
 
             updated_data = (
                 full_name, case_number, birth_year, age, gender, diagnosis,
-                treatment_date, department, pressure_value, pressure_unit,
+                treatment_start_date, treatment_end_date, department,
+                pressure_value, pressure_unit,
                 treatment_result, sessions, courses,
-                indication, complexity, complications, effect, notes
+                indication, complications, effect, notes
             )
             self.db.update_patient(self.patient_data[0], updated_data)
             messagebox.showinfo("Успех", "Данные пациента обновлены.")
@@ -257,9 +271,6 @@ class PatientCardWindow:
     def print_card(self):
         """Формирование печатного представления и отправка на принтер."""
         data = self.patient_data
-        # id, full_name, case_number, birth_year, age, gender, diagnosis, treatment_date,
-        # department, pressure_value, pressure_unit, treatment_result, sessions, courses,
-        # indication, complexity, complications, effect, notes = data
         lines = [
             "Карточка пациента",
             "==================",
@@ -269,18 +280,18 @@ class PatientCardWindow:
             f"Год рождения: {data[3] or '-'}",
             f"Возраст: {data[4] or '-'}",
             f"Пол: {data[5] or '-'}",
-            f"Отделение: {data[8] or '-'}",
             f"Диагноз: {data[6] or '-'}",
-            f"Дата лечения: {data[7] or '-'}",
-            f"Показания: {data[14] or '-'}",
-            f"Курсы: {data[13] if data[13] else 0}",
-            f"Давление: {f'{data[9]} {data[10]}' if data[9] is not None else '-'}",
-            f"Категория сложности: {data[15] or '-'}",
-            f"Сеансы: {data[12] if data[12] else 0}",
+            f"Дата начала лечения: {data[7] or '-'}",
+            f"Дата окончания лечения: {data[8] or '-'}",
+            f"Отделение: {data[9] or '-'}",
+            f"Давление: {f'{data[10]} {data[11]}' if data[10] is not None else '-'}",
+            f"Показания: {data[15] or '-'}",
+            f"Результат лечения: {data[12] or '-'}",
+            f"Сеансы: {data[13] if data[13] else 0}",
+            f"Номер курса: {data[14] if data[14] else 0}",
             f"Осложнения: {data[16] or '-'}",
             f"Эффект: {data[17] or '-'}",
             f"Примечания: {data[18] or '-'}",
-            f"Результат лечения: {data[11] or '-'}",
         ]
         content = "\n".join(lines)
 

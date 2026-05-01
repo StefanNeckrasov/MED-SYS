@@ -47,16 +47,22 @@ class MedicalDatabaseApp:
             ("Возраст (лет):", "entry"),
             ("Пол:", ["М", "Ж"]),
             ("Диагноз:", "entry"),
-            ("Дата лечения (ДД-ММ-ГГГГ):", "entry"),
-            ("Отделение:", "entry"),
+            ("Дата начала лечения (ДД-ММ-ГГГГ):", "entry"),
+            ("Дата окончания лечения (ДД-ММ-ГГГГ):", "entry"),
+            ("Отделение:", ["1 реанимационное", "2 реанимационное", "3 реанимационное",
+                           "1 хирургическое", "2 хирургическое", "3 хирургическое",
+                           "1 урологическое", "2 урологическое", "нейрохирургическое",
+                           "колопроктологическое", "травматолог ортопедическое",
+                           "гинекологическое", "оториноларингологическое",
+                           "отделение челюстно-лицевой хирургии", "офтальмологическое",
+                           "амбулаторное"]),
             ("Давление (число):", "pressure"),
             ("Показания к использованию:", ["Плановое", "Срочное"]),
             ("Результат лечения:", "entry"),
             ("Количество сеансов:", "entry"),
-            ("Количество курсов:", "entry"),
-            ("Категория сложности:", "entry"),
-            ("Осложнения:", "entry"),
-            ("Эффект:", "entry"),
+            ("Номер курса:", "entry"),
+            ("Осложнения:", ["нет", "есть", "бароевстахеит", "бароотит", "кислородная интоксикация", "поражение лёгких"]),
+            ("Эффект:", ["хороший", "удовлетворительный", "без эффекта", "отрицательный", "неопределённый"]),
             ("Примечания:", "entry"),
         ]
 
@@ -108,8 +114,8 @@ class MedicalDatabaseApp:
             .pack(side=tk.LEFT, padx=(0, 10))
         self.search_field_var = tk.StringVar(value="Все поля")
         fields = ["Все поля", "ФИО", "Номер истории", "Год рождения", "Возраст", "Пол", "Диагноз",
-                  "Дата лечения", "Отделение", "Давление", "Результат", "Сеансы", "Курсы",
-                  "Показания", "Категория сложности", "Осложнения", "Эффект", "Примечания"]
+                  "Дата начала", "Дата окончания", "Отделение", "Давление", "Результат", "Сеансы", "Номер курса",
+                  "Показания", "Осложнения", "Эффект", "Примечания"]
         ttk.Combobox(search_frame, textvariable=self.search_field_var, values=fields,
                      state="readonly", width=15).pack(side=tk.LEFT, padx=(0, 10))
         self.search_entry = tk.Entry(search_frame, width=30, font=("Segoe UI", 10))
@@ -124,11 +130,11 @@ class MedicalDatabaseApp:
 
         # Таблица
         columns = ("ID", "ФИО", "Пол", "Номер истории", "Год рожд.", "Возраст", "Диагноз",
-                   "Дата лечения", "Отделение", "Давление", "Результат", "Сеансы", "Курсы")
+                   "Начало лечения", "Окончание лечения", "Отделение", "Давление", "Результат", "Сеансы", "Номер курса")
         self.tree = ttk.Treeview(self.table_frame, columns=columns, show="headings", height=20)
         for col in columns:
             self.tree.heading(col, text=col)
-        widths = [40, 150, 50, 100, 70, 70, 120, 100, 100, 100, 120, 70, 70]
+        widths = [40, 150, 50, 100, 70, 70, 120, 100, 100, 120, 100, 120, 70, 80]
         for col, w in zip(columns, widths):
             self.tree.column(col, width=w, anchor="center")
 
@@ -146,7 +152,6 @@ class MedicalDatabaseApp:
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-    # --- Вспомогательные методы ---
     def open_patient_card(self, event):
         sel = self.tree.selection()
         if not sel:
@@ -165,10 +170,10 @@ class MedicalDatabaseApp:
             age_str = self.entries["Возраст (лет):"].get().strip()
             gender = self.entries["Пол:"].get().strip()
             diagnosis = self.entries["Диагноз:"].get().strip()
-            treatment_date = self.entries["Дата лечения (ДД-ММ-ГГГГ):"].get().strip()
+            treatment_start_date = self.entries["Дата начала лечения (ДД-ММ-ГГГГ):"].get().strip()
+            treatment_end_date = self.entries["Дата окончания лечения (ДД-ММ-ГГГГ):"].get().strip()
             department = self.entries["Отделение:"].get().strip()
 
-            # Давление
             val_entry, unit_combo = self.entries["Давление (число):"]
             pressure_value_str = val_entry.get().strip()
             pressure_unit = unit_combo.get().strip()
@@ -176,17 +181,18 @@ class MedicalDatabaseApp:
             indication = self.entries["Показания к использованию:"].get().strip()
             treatment_result = self.entries["Результат лечения:"].get().strip()
             sessions_str = self.entries["Количество сеансов:"].get().strip()
-            courses_str = self.entries["Количество курсов:"].get().strip()
-            complexity = self.entries["Категория сложности:"].get().strip()
+            courses_str = self.entries["Номер курса:"].get().strip()
             complications = self.entries["Осложнения:"].get().strip()
             effect = self.entries["Эффект:"].get().strip()
             notes = self.entries["Примечания:"].get().strip()
 
-            if not full_name or not diagnosis or not treatment_date:
-                messagebox.showerror("Ошибка", "ФИО, диагноз и дата лечения обязательны.")
+            if not full_name or not diagnosis:
+                messagebox.showerror("Ошибка", "ФИО и диагноз обязательны.")
+                return
+            if not treatment_start_date:
+                messagebox.showerror("Ошибка", "Введите дату начала лечения.")
                 return
 
-            # Валидация года и возраста
             if birth_year_str and not Validators.validate_year(birth_year_str):
                 messagebox.showerror("Ошибка", "Год рождения должен быть целым числом от 1900 до 2100.")
                 return
@@ -197,11 +203,13 @@ class MedicalDatabaseApp:
             birth_year = int(birth_year_str) if birth_year_str else None
             age = int(age_str) if age_str else None
 
-            if not Validators.validate_date(treatment_date):
-                messagebox.showerror("Ошибка", "Дата лечения должна быть в формате ДД-ММ-ГГГГ.")
+            if not Validators.validate_date(treatment_start_date):
+                messagebox.showerror("Ошибка", "Дата начала лечения должна быть в формате ДД-ММ-ГГГГ.")
+                return
+            if treatment_end_date and not Validators.validate_date(treatment_end_date):
+                messagebox.showerror("Ошибка", "Дата окончания лечения должна быть в формате ДД-ММ-ГГГГ.")
                 return
 
-            # Давление
             pressure_value = None
             if pressure_value_str:
                 if not Validators.validate_pressure_value(pressure_value_str):
@@ -212,9 +220,8 @@ class MedicalDatabaseApp:
                     return
                 pressure_value = float(pressure_value_str)
             else:
-                pressure_unit = None  # не задано – оба None
+                pressure_unit = None
 
-            # Сеансы/курсы (необязательные)
             sessions = int(sessions_str) if sessions_str else 0
             courses = int(courses_str) if courses_str else 0
             if sessions < 0 or courses < 0:
@@ -222,9 +229,10 @@ class MedicalDatabaseApp:
 
             patient_data = (
                 full_name, case_number, birth_year, age, gender, diagnosis,
-                treatment_date, department, pressure_value, pressure_unit,
+                treatment_start_date, treatment_end_date, department,
+                pressure_value, pressure_unit,
                 treatment_result, sessions, courses,
-                indication, complexity, complications, effect, notes
+                indication, complications, effect, notes
             )
             self.db.add_patient(patient_data)
             self.clear_entries()
@@ -237,7 +245,7 @@ class MedicalDatabaseApp:
 
     def clear_entries(self):
         for key, widget in self.entries.items():
-            if isinstance(widget, tuple):  # давление (entry, combo)
+            if isinstance(widget, tuple):
                 widget[0].delete(0, tk.END)
                 widget[1].set("")
             elif isinstance(widget, ttk.Combobox):
@@ -278,7 +286,8 @@ class MedicalDatabaseApp:
                    OR CAST(age AS TEXT) LIKE ?
                    OR LOWER(gender) LIKE ?
                    OR LOWER(diagnosis) LIKE ?
-                   OR treatment_date LIKE ?
+                   OR treatment_start_date LIKE ?
+                   OR treatment_end_date LIKE ?
                    OR LOWER(department) LIKE ?
                    OR CAST(pressure_value AS TEXT) LIKE ?
                    OR LOWER(pressure_unit) LIKE ?
@@ -286,7 +295,6 @@ class MedicalDatabaseApp:
                    OR CAST(sessions_count AS TEXT) LIKE ?
                    OR CAST(courses_count AS TEXT) LIKE ?
                    OR LOWER(indication) LIKE ?
-                   OR LOWER(complexity) LIKE ?
                    OR LOWER(complications) LIKE ?
                    OR LOWER(effect) LIKE ?
                    OR LOWER(notes) LIKE ?
@@ -303,14 +311,14 @@ class MedicalDatabaseApp:
                 "Возраст": ("age", False),
                 "Пол": ("gender", True),
                 "Диагноз": ("diagnosis", True),
-                "Дата лечения": ("treatment_date", False),
+                "Дата начала": ("treatment_start_date", False),
+                "Дата окончания": ("treatment_end_date", False),
                 "Отделение": ("department", True),
                 "Давление": ("pressure_value", False),
                 "Результат": ("treatment_result", True),
                 "Сеансы": ("sessions_count", False),
-                "Курсы": ("courses_count", False),
+                "Номер курса": ("courses_count", False),
                 "Показания": ("indication", True),
-                "Категория сложности": ("complexity", True),
                 "Осложнения": ("complications", True),
                 "Эффект": ("effect", True),
                 "Примечания": ("notes", True),
@@ -341,13 +349,14 @@ class MedicalDatabaseApp:
             self._insert_tree_row(rec)
 
     def _insert_tree_row(self, rec):
-        # rec: (0:id, 1:full_name, 2:case_number, 3:birth_year, 4:age, 5:gender,
-        #       6:diagnosis, 7:treatment_date, 8:department, 9:pressure_value,
-        #       10:pressure_unit, 11:treatment_result, 12:sessions, 13:courses,
-        #       14:indication, 15:complexity, 16:complications, 17:effect, 18:notes)
+        # Структура записи:
+        # 0:id, 1:full_name, 2:case_number, 3:birth_year, 4:age, 5:gender,
+        # 6:diagnosis, 7:treatment_start_date, 8:treatment_end_date, 9:department,
+        # 10:pressure_value, 11:pressure_unit, 12:treatment_result,
+        # 13:sessions, 14:courses, 15:indication, 16:complications, 17:effect, 18:notes
         pressure_display = ""
-        if rec[9] is not None and rec[10] is not None:
-            pressure_display = f"{rec[9]} {rec[10]}"
+        if rec[10] is not None and rec[11] is not None:
+            pressure_display = f"{rec[10]} {rec[11]}"
         values = (
             rec[0],          # ID
             rec[1],          # ФИО
@@ -356,12 +365,13 @@ class MedicalDatabaseApp:
             rec[3] or "",    # Год рождения
             rec[4] or "",    # Возраст
             rec[6] or "",    # Диагноз
-            rec[7] or "",    # Дата лечения
-            rec[8] or "",    # Отделение
+            rec[7] or "",    # Начало лечения
+            rec[8] or "",    # Окончание лечения
+            rec[9] or "",    # Отделение
             pressure_display,
-            rec[11] or "",   # Результат
-            rec[12] or 0,    # Сеансы
-            rec[13] or 0,    # Курсы
+            rec[12] or "",   # Результат
+            rec[13] or 0,    # Сеансы
+            rec[14] or 0,    # Номер курса
         )
         self.tree.insert("", tk.END, values=values)
 
