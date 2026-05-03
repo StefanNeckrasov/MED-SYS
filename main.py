@@ -18,6 +18,7 @@ class MedicalDatabaseApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Медицинская информационная система")
+        #self.root.iconbitmap(default="icon.ico")
         self.root.geometry("1500x900")
         self.root.configure(bg="#f0f0f0")
         self.db = Database()
