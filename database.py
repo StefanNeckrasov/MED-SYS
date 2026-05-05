@@ -14,6 +14,7 @@ class Database:
         self.cursor = None
         self.connect()
         self.create_tables()
+        self.migrate_if_needed()
     
     def connect(self):
         try:
@@ -45,7 +46,8 @@ class Database:
                     indication TEXT,
                     complications TEXT,
                     effect TEXT,
-                    notes TEXT
+                    notes TEXT,
+                    hidden INTEGER DEFAULT 0
                 )
             ''')
             self.conn.commit()
@@ -53,8 +55,18 @@ class Database:
             print("Ошибка создания таблицы:", e)
             raise
     
+    def migrate_if_needed(self):
+        try:
+            self.cursor.execute("PRAGMA table_info(patients)")
+            columns = [row[1] for row in self.cursor.fetchall()]
+            if 'hidden' not in columns:
+                self.cursor.execute("ALTER TABLE patients ADD COLUMN hidden INTEGER DEFAULT 0")
+                self.conn.commit()
+                print("Миграция: добавлен столбец hidden.")
+        except Exception as e:
+            print("Ошибка миграции:", e)
+    
     def add_patient(self, patient_data):
-        """Добавление нового пациента."""
         try:
             self.cursor.execute('''
                 INSERT INTO patients (
@@ -62,21 +74,30 @@ class Database:
                     treatment_start_date, treatment_end_date, department,
                     pressure_value, pressure_unit,
                     treatment_result, sessions_count, courses_count,
-                    indication, complications, effect, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', patient_data)
+                    indication, complications, effect, notes, hidden
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', patient_data + (0,))
             self.conn.commit()
             return self.cursor.lastrowid
         except Exception as e:
             print("Ошибка добавления пациента:", e)
             raise
     
-    def get_all_patients(self):
+    def get_visible_patients(self):
         try:
-            self.cursor.execute("SELECT * FROM patients ORDER BY id DESC")
+            self.cursor.execute("SELECT * FROM patients WHERE IFNULL(hidden, 0) = 0 ORDER BY id DESC")
             return self.cursor.fetchall()
         except Exception as e:
-            print("Ошибка получения пациентов:", e)
+            print("Ошибка получения видимых пациентов:", e)
+            return []
+    
+    def get_archived_patients(self):
+        """Возвращает только архивных (скрытых) пациентов."""
+        try:
+            self.cursor.execute("SELECT * FROM patients WHERE hidden = 1 ORDER BY id DESC")
+            return self.cursor.fetchall()
+        except Exception as e:
+            print("Ошибка получения архивных пациентов:", e)
             return []
     
     def get_patient_by_id(self, patient_id):
@@ -87,19 +108,31 @@ class Database:
             print("Ошибка получения пациента:", e)
             return None
     
-    def update_patient(self, patient_id, patient_data):
-        """Обновление данных пациента."""
+    def update_patient(self, patient_id, patient_data, hidden=None):
         try:
-            self.cursor.execute('''
-                UPDATE patients SET
-                    full_name = ?, case_number = ?, birth_year = ?, age = ?,
-                    gender = ?, diagnosis = ?,
-                    treatment_start_date = ?, treatment_end_date = ?,
-                    department = ?, pressure_value = ?, pressure_unit = ?,
-                    treatment_result = ?, sessions_count = ?, courses_count = ?,
-                    indication = ?, complications = ?, effect = ?, notes = ?
-                WHERE id = ?
-            ''', (*patient_data, patient_id))
+            if hidden is not None:
+                self.cursor.execute('''
+                    UPDATE patients SET
+                        full_name = ?, case_number = ?, birth_year = ?, age = ?,
+                        gender = ?, diagnosis = ?,
+                        treatment_start_date = ?, treatment_end_date = ?,
+                        department = ?, pressure_value = ?, pressure_unit = ?,
+                        treatment_result = ?, sessions_count = ?, courses_count = ?,
+                        indication = ?, complications = ?, effect = ?, notes = ?,
+                        hidden = ?
+                    WHERE id = ?
+                ''', (*patient_data, hidden, patient_id))
+            else:
+                self.cursor.execute('''
+                    UPDATE patients SET
+                        full_name = ?, case_number = ?, birth_year = ?, age = ?,
+                        gender = ?, diagnosis = ?,
+                        treatment_start_date = ?, treatment_end_date = ?,
+                        department = ?, pressure_value = ?, pressure_unit = ?,
+                        treatment_result = ?, sessions_count = ?, courses_count = ?,
+                        indication = ?, complications = ?, effect = ?, notes = ?
+                    WHERE id = ?
+                ''', (*patient_data, patient_id))
             self.conn.commit()
         except Exception as e:
             print("Ошибка обновления пациента:", e)
@@ -112,6 +145,14 @@ class Database:
         except Exception as e:
             print("Ошибка поиска:", e)
             return []
+    
+    def archive_patient(self, patient_id):
+        try:
+            self.cursor.execute("UPDATE patients SET hidden = 1 WHERE id = ?", (patient_id,))
+            self.conn.commit()
+        except Exception as e:
+            print("Ошибка архивирования пациента:", e)
+            raise
     
     def close(self):
         try:

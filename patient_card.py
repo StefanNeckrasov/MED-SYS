@@ -54,7 +54,7 @@ class PatientCardWindow:
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Поля (полный список, без категории сложности)
+        # Поля (аналогично main)
         labels = [
             ("ID пациента:", "readonly"),
             ("Номер истории болезни:", "entry"),
@@ -71,7 +71,9 @@ class PatientCardWindow:
                            "колопроктологическое", "травматолог ортопедическое",
                            "гинекологическое", "оториноларингологическое",
                            "отделение челюстно-лицевой хирургии", "офтальмологическое",
-                           "амбулаторное"]),
+                           "амбулаторное", "неврологическое", "1 кардиологиологическое", 
+                           "2 кардиологическое", "1 терапевтическое", "2 терапевтическое", 
+                           "ревматологическое", "химиотерапевтическое", "гастроэнтерологическое", "пульмонологическое"]),
             ("Давление (число):", "pressure"),
             ("Показания к использованию:", ["Плановое", "Срочное"]),
             ("Результат лечения:", "entry"),
@@ -123,6 +125,9 @@ class PatientCardWindow:
         btn_frame.grid(row=self.row, column=0, columnspan=2, pady=20)
         tk.Button(btn_frame, text="💾 Сохранить изменения", command=self.save_changes,
                   bg="#28a745", fg="white", font=("Segoe UI", 11, "bold"),
+                  relief="flat", width=20, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="📥 Закрыть и сохранить", command=self.close_and_save,
+                  bg="#ffc107", fg="black", font=("Segoe UI", 11, "bold"),
                   relief="flat", width=20, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="🖨 Печать", command=self.print_card,
                   bg="#17a2b8", fg="white", font=("Segoe UI", 11, "bold"),
@@ -189,7 +194,8 @@ class PatientCardWindow:
         widget = self.entries[label]
         return widget.get("1.0", "end-1c").strip()
 
-    def save_changes(self):
+    def _validate_and_prepare(self):
+        """Проверка полей и сбор кортежа данных для сохранения. Возвращает данные или None при ошибке."""
         try:
             full_name = self.entries["ФИО пациента:"].get().strip()
             case_number = self.entries["Номер истории болезни:"].get().strip()
@@ -213,40 +219,35 @@ class PatientCardWindow:
 
             if not full_name or not diagnosis:
                 messagebox.showerror("Ошибка", "ФИО и диагноз обязательны.")
-                return
+                return None
             if not treatment_start_date:
                 messagebox.showerror("Ошибка", "Введите дату начала лечения.")
-                return
-
+                return None
             if birth_year_str and not Validators.validate_year(birth_year_str):
                 messagebox.showerror("Ошибка", "Год рождения должен быть целым числом от 1900 до 2100.")
-                return
+                return None
             if age_str and not Validators.validate_age(age_str):
                 messagebox.showerror("Ошибка", "Возраст должен быть целым числом от 0 до 150.")
-                return
-
+                return None
             birth_year = int(birth_year_str) if birth_year_str else None
             age = int(age_str) if age_str else None
-
             if not Validators.validate_date(treatment_start_date):
                 messagebox.showerror("Ошибка", "Дата начала лечения должна быть в формате ДД-ММ-ГГГГ.")
-                return
+                return None
             if treatment_end_date and not Validators.validate_date(treatment_end_date):
                 messagebox.showerror("Ошибка", "Дата окончания лечения должна быть в формате ДД-ММ-ГГГГ.")
-                return
-
+                return None
             pressure_value = None
             if pressure_str:
                 if not Validators.validate_pressure_value(pressure_str):
                     messagebox.showerror("Ошибка", "Давление должно быть положительным числом.")
-                    return
+                    return None
                 if not pressure_unit:
                     messagebox.showerror("Ошибка", "Выберите единицу давления.")
-                    return
+                    return None
                 pressure_value = float(pressure_str)
             else:
                 pressure_unit = None
-
             sessions = int(sessions_str) if sessions_str else 0
             courses = int(courses_str) if courses_str else 0
             if sessions < 0 or courses < 0:
@@ -259,14 +260,35 @@ class PatientCardWindow:
                 treatment_result, sessions, courses,
                 indication, complications, effect, notes
             )
-            self.db.update_patient(self.patient_data[0], updated_data)
+            return updated_data
+        except ValueError as e:
+            messagebox.showerror("Ошибка", f"Некорректные данные: {e}")
+            return None
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка при проверке данных: {e}")
+            return None
+
+    def _save_changes(self, hidden=None):
+        """Фактическое сохранение в БД. hidden = 0/1 или None."""
+        updated_data = self._validate_and_prepare()
+        if updated_data is None:
+            return False
+        self.db.update_patient(self.patient_data[0], updated_data, hidden=hidden)
+        return True
+
+    def save_changes(self):
+        """Обычное сохранение без архивирования."""
+        if self._save_changes(hidden=0):
             messagebox.showinfo("Успех", "Данные пациента обновлены.")
             self.callback()
             self.window.destroy()
-        except ValueError as e:
-            messagebox.showerror("Ошибка", f"Некорректные данные: {e}")
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при сохранении: {e}")
+
+    def close_and_save(self):
+        """Сохранить и переместить в архив (скрыть из основного списка)."""
+        if self._save_changes(hidden=1):
+            messagebox.showinfo("Успех", "Пациент сохранён и перемещён в архив.")
+            self.callback()
+            self.window.destroy()
 
     def print_card(self):
         """Формирование печатного представления и отправка на принтер."""

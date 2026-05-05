@@ -18,10 +18,10 @@ class MedicalDatabaseApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Медицинская информационная система")
-        #self.root.iconbitmap(default="icon.ico")
         self.root.geometry("1500x900")
         self.root.configure(bg="#f0f0f0")
         self.db = Database()
+        self.show_archived = False   # Флаг режима архива
         self.create_widgets()
         self.show_records()
 
@@ -131,6 +131,12 @@ class MedicalDatabaseApp:
                   bg="#ffc107", fg="black", font=("Segoe UI", 11, "bold"),
                   relief="flat", width=10).pack(side=tk.LEFT)
 
+        # Кнопка Архив
+        self.archive_button = tk.Button(search_frame, text="📂 Архив", command=self.toggle_archive,
+                                        bg="#6f42c1", fg="white", font=("Segoe UI", 11, "bold"),
+                                        relief="flat", width=12)
+        self.archive_button.pack(side=tk.LEFT, padx=(10, 0))
+
         # Таблица
         columns = ("ID", "ФИО", "Пол", "Номер истории", "Год рожд.", "Возраст", "Диагноз",
                    "Начало лечения", "Окончание лечения", "Отделение", "Давление", "Результат", "Сеансы", "Номер курса")
@@ -154,6 +160,15 @@ class MedicalDatabaseApp:
                   relief="flat", width=15, padx=10, pady=8).pack(pady=10)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def toggle_archive(self):
+        """Переключает режим отображения архива."""
+        self.show_archived = not self.show_archived
+        if self.show_archived:
+            self.archive_button.config(text="🗂 Скрыть архив", bg="#dc3545", width=16)
+        else:
+            self.archive_button.config(text="📂 Архив", bg="#6f42c1", width=12)
+        self.show_records()
 
     def open_patient_card(self, event):
         sel = self.tree.selection()
@@ -345,18 +360,17 @@ class MedicalDatabaseApp:
                 return query, params
 
     def show_records(self):
+        """Отображает записи в зависимости от режима (обычный/архив)."""
         for item in self.tree.get_children():
             self.tree.delete(item)
-        records = self.db.get_all_patients()
+        if self.show_archived:
+            records = self.db.get_archived_patients()
+        else:
+            records = self.db.get_visible_patients()
         for rec in records:
             self._insert_tree_row(rec)
 
     def _insert_tree_row(self, rec):
-        # Структура записи:
-        # 0:id, 1:full_name, 2:case_number, 3:birth_year, 4:age, 5:gender,
-        # 6:diagnosis, 7:treatment_start_date, 8:treatment_end_date, 9:department,
-        # 10:pressure_value, 11:pressure_unit, 12:treatment_result,
-        # 13:sessions, 14:courses, 15:indication, 16:complications, 17:effect, 18:notes
         pressure_display = ""
         if rec[10] is not None and rec[11] is not None:
             pressure_display = f"{rec[10]} {rec[11]}"
