@@ -17,6 +17,7 @@ class PatientCardWindow:
         self.patient_data = patient_data
         self.callback = callback
         self.db = db
+        self.is_archived = (patient_data[19] == 1) if len(patient_data) > 19 else False  # hidden поле
         self.window = tk.Toplevel(parent)
         self.window.title(f"Карточка пациента: {patient_data[1]}")
         self.window.geometry("700x800")
@@ -61,7 +62,7 @@ class PatientCardWindow:
             ("ФИО пациента:", "entry"),
             ("Год рождения:", "entry"),
             ("Возраст (лет):", "entry"),
-            ("Пол:", ["М", "Ж", "Другой"]),
+            ("Пол:", ["М", "Ж", "Другой"]),   # теперь единый список
             ("Диагноз:", "text"),
             ("Дата начала лечения (ДД-ММ-ГГГГ):", "entry"),
             ("Дата окончания лечения (ДД-ММ-ГГГГ):", "entry"),
@@ -123,15 +124,27 @@ class PatientCardWindow:
         # Кнопки
         btn_frame = tk.Frame(self.scrollable_frame, bg="#f0f0f0")
         btn_frame.grid(row=self.row, column=0, columnspan=2, pady=20)
+
+        # Стандартные кнопки
         tk.Button(btn_frame, text="💾 Сохранить изменения", command=self.save_changes,
                   bg="#28a745", fg="white", font=("Segoe UI", 11, "bold"),
                   relief="flat", width=20, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
+
+        # Кнопка "Закрыть и сохранить" (архивирует)
         tk.Button(btn_frame, text="📥 Закрыть и сохранить", command=self.close_and_save,
                   bg="#ffc107", fg="black", font=("Segoe UI", 11, "bold"),
                   relief="flat", width=20, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
+
+        # Новая кнопка "Вернуть из архива" – показываем только для архивных записей
+        if self.is_archived:
+            tk.Button(btn_frame, text="↩ Вернуть из архива", command=self.restore_from_archive,
+                      bg="#007bff", fg="white", font=("Segoe UI", 11, "bold"),
+                      relief="flat", width=18, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
+
         tk.Button(btn_frame, text="🖨 Печать", command=self.print_card,
                   bg="#17a2b8", fg="white", font=("Segoe UI", 11, "bold"),
                   relief="flat", width=15, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
+
         tk.Button(btn_frame, text="✖ Отмена", command=self.window.destroy,
                   bg="#6c757d", fg="white", font=("Segoe UI", 11, "bold"),
                   relief="flat", width=15, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
@@ -182,7 +195,12 @@ class PatientCardWindow:
         self.entries[label].insert(0, str(value) if value is not None else "")
 
     def _set_combo(self, label, value):
-        self.entries[label].set(value if value else "")
+        """Устанавливает значение комбобокса, только если оно есть в списке допустимых."""
+        combo = self.entries[label]
+        if value and value in combo['values']:
+            combo.set(value)
+        else:
+            combo.set("")   # сбрасываем, чтобы не было невалидного значения
 
     def _set_text(self, label, value):
         widget = self.entries[label]
@@ -287,6 +305,13 @@ class PatientCardWindow:
         """Сохранить и переместить в архив (скрыть из основного списка)."""
         if self._save_changes(hidden=1):
             messagebox.showinfo("Успех", "Пациент сохранён и перемещён в архив.")
+            self.callback()
+            self.window.destroy()
+
+    def restore_from_archive(self):
+        """Вернуть пациента из архива (сделать видимым)."""
+        if self._save_changes(hidden=0):
+            messagebox.showinfo("Успех", "Пациент возвращён из архива.")
             self.callback()
             self.window.destroy()
 
