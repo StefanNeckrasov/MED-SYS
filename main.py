@@ -46,7 +46,7 @@ class MedicalDatabaseApp:
             ("Номер истории болезни:", "entry"),
             ("Год рождения:", "entry"),
             ("Возраст (лет):", "entry"),
-            ("Пол:", ["М", "Ж"]),
+            ("Пол:", ["М", "Ж", "Другой"]),
             ("Диагноз:", "entry"),
             ("Дата начала лечения (ДД-ММ-ГГГГ):", "entry"),
             ("Дата окончания лечения (ДД-ММ-ГГГГ):", "entry"),
@@ -342,7 +342,20 @@ class MedicalDatabaseApp:
                 "Примечания": ("notes", True),
             }
             db_field, is_text = mapping[field]
-            if field == "Давление":
+            
+            # Улучшенный поиск для поля "ФИО": разбивка на слова
+            if field == "ФИО":
+                words = term.split()
+                if len(words) == 1:
+                    query = f"SELECT * FROM patients WHERE LOWER({db_field}) LIKE ? ORDER BY id DESC"
+                    return query, (f"%{words[0].lower()}%",)
+                else:
+                    conditions = " OR ".join([f"LOWER({db_field}) LIKE ?" for _ in words])
+                    query = f"SELECT * FROM patients WHERE {conditions} ORDER BY id DESC"
+                    params = tuple(f"%{w.lower()}%" for w in words)
+                    return query, params
+            
+            elif field == "Давление":
                 query = """
                     SELECT * FROM patients
                     WHERE CAST(pressure_value AS TEXT) LIKE ?
