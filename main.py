@@ -21,7 +21,7 @@ class MedicalDatabaseApp:
         self.root.geometry("1500x900")
         self.root.configure(bg="#f0f0f0")
         self.db = Database()
-        self.show_archived = False   # Флаг режима архива
+        self.show_archived = False
         self.create_widgets()
         self.show_records()
 
@@ -85,12 +85,12 @@ class MedicalDatabaseApp:
                 unit_combo.set("")
                 self.entries[label_text] = (val_entry, unit_combo)
 
-            elif isinstance(widget_type, list):  # Combobox
+            elif isinstance(widget_type, list):
                 combo = ttk.Combobox(self.input_frame, values=widget_type, state="readonly", width=27)
                 combo.grid(row=i, column=1, padx=10, pady=5, sticky="w")
                 combo.set("")
                 self.entries[label_text] = combo
-            else:  # entry
+            else:
                 entry = tk.Entry(self.input_frame, width=30, font=("Segoe UI", 10))
                 entry.grid(row=i, column=1, padx=10, pady=5)
                 self.entries[label_text] = entry
@@ -162,7 +162,6 @@ class MedicalDatabaseApp:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def toggle_archive(self):
-        """Переключает режим отображения архива."""
         self.show_archived = not self.show_archived
         if self.show_archived:
             self.archive_button.config(text="🗂 Скрыть архив", bg="#dc3545", width=16)
@@ -295,36 +294,37 @@ class MedicalDatabaseApp:
             messagebox.showerror("Ошибка", f"Ошибка поиска: {e}")
 
     def _build_search_query(self, term, field):
+        # Используем COLLATE NOCASE для регистронезависимого поиска в текстовых полях
         if field == "Все поля":
             query = """
                 SELECT * FROM patients
-                WHERE LOWER(full_name) LIKE ?
-                   OR case_number LIKE ?
+                WHERE full_name LIKE ? COLLATE NOCASE
+                   OR case_number LIKE ? COLLATE NOCASE
                    OR CAST(birth_year AS TEXT) LIKE ?
                    OR CAST(age AS TEXT) LIKE ?
-                   OR LOWER(gender) LIKE ?
-                   OR LOWER(diagnosis) LIKE ?
+                   OR gender LIKE ? COLLATE NOCASE
+                   OR diagnosis LIKE ? COLLATE NOCASE
                    OR treatment_start_date LIKE ?
                    OR treatment_end_date LIKE ?
-                   OR LOWER(department) LIKE ?
+                   OR department LIKE ? COLLATE NOCASE
                    OR CAST(pressure_value AS TEXT) LIKE ?
-                   OR LOWER(pressure_unit) LIKE ?
-                   OR LOWER(treatment_result) LIKE ?
+                   OR pressure_unit LIKE ? COLLATE NOCASE
+                   OR treatment_result LIKE ? COLLATE NOCASE
                    OR CAST(sessions_count AS TEXT) LIKE ?
                    OR CAST(courses_count AS TEXT) LIKE ?
-                   OR LOWER(indication) LIKE ?
-                   OR LOWER(complications) LIKE ?
-                   OR LOWER(effect) LIKE ?
-                   OR LOWER(notes) LIKE ?
+                   OR indication LIKE ? COLLATE NOCASE
+                   OR complications LIKE ? COLLATE NOCASE
+                   OR effect LIKE ? COLLATE NOCASE
+                   OR notes LIKE ? COLLATE NOCASE
                 ORDER BY id DESC
             """
-            t = f"%{term.lower()}%"
+            t = f"%{term}%"
             params = (t,) * 18
             return query, params
         else:
             mapping = {
                 "ФИО": ("full_name", True),
-                "Номер истории": ("case_number", False),
+                "Номер истории": ("case_number", True),
                 "Год рождения": ("birth_year", False),
                 "Возраст": ("age", False),
                 "Пол": ("gender", True),
@@ -343,37 +343,39 @@ class MedicalDatabaseApp:
             }
             db_field, is_text = mapping[field]
             
-            # Улучшенный поиск для поля "ФИО": разбивка на слова
+            # Для ФИО - разбивка на слова с COLLATE NOCASE
             if field == "ФИО":
                 words = term.split()
                 if len(words) == 1:
-                    query = f"SELECT * FROM patients WHERE LOWER({db_field}) LIKE ? ORDER BY id DESC"
-                    return query, (f"%{words[0].lower()}%",)
+                    query = f"SELECT * FROM patients WHERE {db_field} LIKE ? COLLATE NOCASE ORDER BY id DESC"
+                    return query, (f"%{words[0]}%",)
                 else:
-                    conditions = " OR ".join([f"LOWER({db_field}) LIKE ?" for _ in words])
+                    conditions = " OR ".join([f"{db_field} LIKE ? COLLATE NOCASE" for _ in words])
                     query = f"SELECT * FROM patients WHERE {conditions} ORDER BY id DESC"
-                    params = tuple(f"%{w.lower()}%" for w in words)
+                    params = tuple(f"%{w}%" for w in words)
                     return query, params
             
+            # Для давления ищем по числу и единице
             elif field == "Давление":
                 query = """
                     SELECT * FROM patients
                     WHERE CAST(pressure_value AS TEXT) LIKE ?
-                       OR LOWER(pressure_unit) LIKE ?
+                       OR pressure_unit LIKE ? COLLATE NOCASE
                     ORDER BY id DESC
                 """
-                return query, (f"%{term}%", f"%{term.lower()}%")
+                return query, (f"%{term}%", f"%{term}%")
+            
             else:
+                # Для остальных полей: если is_text, то с COLLATE NOCASE, иначе CAST
                 if is_text:
-                    query = f"SELECT * FROM patients WHERE LOWER({db_field}) LIKE ? ORDER BY id DESC"
-                    params = (f"%{term.lower()}%",)
+                    query = f"SELECT * FROM patients WHERE {db_field} LIKE ? COLLATE NOCASE ORDER BY id DESC"
+                    params = (f"%{term}%",)
                 else:
                     query = f"SELECT * FROM patients WHERE CAST({db_field} AS TEXT) LIKE ? ORDER BY id DESC"
                     params = (f"%{term}%",)
                 return query, params
 
     def show_records(self):
-        """Отображает записи в зависимости от режима (обычный/архив)."""
         for item in self.tree.get_children():
             self.tree.delete(item)
         if self.show_archived:
@@ -388,20 +390,9 @@ class MedicalDatabaseApp:
         if rec[10] is not None and rec[11] is not None:
             pressure_display = f"{rec[10]} {rec[11]}"
         values = (
-            rec[0],          # ID
-            rec[1],          # ФИО
-            rec[5] or "",    # Пол
-            rec[2] or "",    # Номер истории
-            rec[3] or "",    # Год рождения
-            rec[4] or "",    # Возраст
-            rec[6] or "",    # Диагноз
-            rec[7] or "",    # Начало лечения
-            rec[8] or "",    # Окончание лечения
-            rec[9] or "",    # Отделение
-            pressure_display,
-            rec[12] or "",   # Результат
-            rec[13] or 0,    # Сеансы
-            rec[14] or 0,    # Номер курса
+            rec[0], rec[1], rec[5] or "", rec[2] or "", rec[3] or "",
+            rec[4] or "", rec[6] or "", rec[7] or "", rec[8] or "",
+            rec[9] or "", pressure_display, rec[12] or "", rec[13] or 0, rec[14] or 0
         )
         self.tree.insert("", tk.END, values=values)
 
