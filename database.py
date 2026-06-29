@@ -83,21 +83,17 @@ class Database:
             print("Ошибка добавления пациента:", e)
             raise
     
-    def get_visible_patients(self):
+    def get_patients_sorted(self, hidden=0, order_by="id DESC"):
+        """
+        Получить пациентов с учётом фильтра hidden и сортировки.
+        order_by – строка для ORDER BY (например, 'full_name ASC', 'id DESC').
+        """
         try:
-            self.cursor.execute("SELECT * FROM patients WHERE IFNULL(hidden, 0) = 0 ORDER BY id DESC")
+            query = f"SELECT * FROM patients WHERE IFNULL(hidden, 0) = ? ORDER BY {order_by}"
+            self.cursor.execute(query, (hidden,))
             return self.cursor.fetchall()
         except Exception as e:
-            print("Ошибка получения видимых пациентов:", e)
-            return []
-    
-    def get_archived_patients(self):
-        """Возвращает только архивных (скрытых) пациентов."""
-        try:
-            self.cursor.execute("SELECT * FROM patients WHERE hidden = 1 ORDER BY id DESC")
-            return self.cursor.fetchall()
-        except Exception as e:
-            print("Ошибка получения архивных пациентов:", e)
+            print("Ошибка получения пациентов с сортировкой:", e)
             return []
     
     def get_patient_by_id(self, patient_id):

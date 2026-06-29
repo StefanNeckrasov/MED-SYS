@@ -1,7 +1,9 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import os
 import sys
+import shutil
+from datetime import datetime
 
 if getattr(sys, 'frozen', False):
     application_path = os.path.dirname(sys.executable)
@@ -18,10 +20,11 @@ class MedicalDatabaseApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Медицинская информационная система")
-        self.root.geometry("1500x900")
+        self.root.geometry("1500x950")
         self.root.configure(bg="#f0f0f0")
         self.db = Database()
         self.show_archived = False
+        self.current_order = "id DESC"  # сортировка по умолчанию
         self.create_widgets()
         self.show_records()
 
@@ -95,7 +98,7 @@ class MedicalDatabaseApp:
                 entry.grid(row=i, column=1, padx=10, pady=5)
                 self.entries[label_text] = entry
 
-        # Кнопки
+        # Кнопки добавления/очистки
         btn_frame = tk.Frame(self.input_frame, bg="#f0f0f0")
         btn_frame.grid(row=len(labels), column=0, columnspan=2, pady=20)
         tk.Button(btn_frame, text="Добавить запись", command=self.add_record,
@@ -110,40 +113,69 @@ class MedicalDatabaseApp:
                                          font=("Segoe UI", 13, "bold"), bg="#f0f0f0", fg="#0056b3")
         self.table_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
+        # Панель управления (поиск, сортировка, бэкап, импорт)
+        control_frame = tk.Frame(self.table_frame, bg="#f0f0f0")
+        control_frame.pack(fill=tk.X, padx=10, pady=10)
+
         # Поиск
-        search_frame = tk.Frame(self.table_frame, bg="#f0f0f0")
-        search_frame.pack(fill=tk.X, padx=10, pady=10)
-        tk.Label(search_frame, text="Селективный поиск:", font=("Segoe UI", 11, "bold"), bg="#f0f0f0")\
-            .pack(side=tk.LEFT, padx=(0, 10))
+        tk.Label(control_frame, text="Поиск:", font=("Segoe UI", 10, "bold"), bg="#f0f0f0")\
+            .pack(side=tk.LEFT, padx=(0,5))
         self.search_field_var = tk.StringVar(value="Все поля")
         fields = ["Все поля", "ФИО", "Номер истории", "Год рождения", "Возраст", "Пол", "Диагноз",
                   "Дата начала", "Дата окончания", "Отделение", "Давление", "Результат", "Сеансы", "Номер курса",
                   "Показания", "Осложнения", "Эффект", "Примечания"]
-        ttk.Combobox(search_frame, textvariable=self.search_field_var, values=fields,
-                     state="readonly", width=15).pack(side=tk.LEFT, padx=(0, 10))
-        self.search_entry = tk.Entry(search_frame, width=30, font=("Segoe UI", 10))
-        self.search_entry.pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Combobox(control_frame, textvariable=self.search_field_var, values=fields,
+                     state="readonly", width=14).pack(side=tk.LEFT, padx=(0,5))
+        self.search_entry = tk.Entry(control_frame, width=20, font=("Segoe UI", 10))
+        self.search_entry.pack(side=tk.LEFT, padx=(0,5))
         self.search_entry.bind('<Return>', lambda e: self.search_records())
-        tk.Button(search_frame, text="Найти", command=self.search_records,
-                  bg="#28a745", fg="white", font=("Segoe UI", 11, "bold"),
-                  relief="flat", width=10).pack(side=tk.LEFT, padx=(0, 5))
-        tk.Button(search_frame, text="Сбросить", command=self.reset_search,
-                  bg="#ffc107", fg="black", font=("Segoe UI", 11, "bold"),
-                  relief="flat", width=10).pack(side=tk.LEFT)
+        tk.Button(control_frame, text="Найти", command=self.search_records,
+                  bg="#28a745", fg="white", font=("Segoe UI", 10, "bold"),
+                  relief="flat", width=8).pack(side=tk.LEFT, padx=(0,5))
+        tk.Button(control_frame, text="Сброс", command=self.reset_search,
+                  bg="#ffc107", fg="black", font=("Segoe UI", 10, "bold"),
+                  relief="flat", width=8).pack(side=tk.LEFT, padx=(0,10))
 
-        # Кнопка Архив
-        self.archive_button = tk.Button(search_frame, text="📂 Архив", command=self.toggle_archive,
-                                        bg="#6f42c1", fg="white", font=("Segoe UI", 11, "bold"),
-                                        relief="flat", width=12)
-        self.archive_button.pack(side=tk.LEFT, padx=(10, 0))
+        # Сортировка
+        tk.Label(control_frame, text="Сортировка:", font=("Segoe UI", 10, "bold"), bg="#f0f0f0")\
+            .pack(side=tk.LEFT, padx=(0,5))
+        self.sort_var = tk.StringVar(value="По ID (новые сверху)")
+        sort_options = [
+            "По ID (новые сверху)",
+            "По ID (старые сверху)",
+            "По ФИО (А-Я)",
+            "По ФИО (Я-А)",
+            "По дате начала (новые)",
+            "По дате начала (старые)",
+            "По дате добавления (новые)",
+            "По дате добавления (старые)"
+        ]
+        sort_combo = ttk.Combobox(control_frame, textvariable=self.sort_var, values=sort_options,
+                                  state="readonly", width=20)
+        sort_combo.pack(side=tk.LEFT, padx=(0,10))
+        sort_combo.bind('<<ComboboxSelected>>', lambda e: self.change_sort())
+
+        # Кнопки архива, бэкапа, импорта
+        self.archive_button = tk.Button(control_frame, text="📂 Архив", command=self.toggle_archive,
+                                        bg="#6f42c1", fg="white", font=("Segoe UI", 10, "bold"),
+                                        relief="flat", width=10)
+        self.archive_button.pack(side=tk.LEFT, padx=(0,5))
+
+        tk.Button(control_frame, text="💾 Бэкап БД", command=self.backup_database,
+                  bg="#17a2b8", fg="white", font=("Segoe UI", 10, "bold"),
+                  relief="flat", width=12).pack(side=tk.LEFT, padx=(0,5))
+
+        tk.Button(control_frame, text="📂 Импорт БД", command=self.import_database,
+                  bg="#fd7e14", fg="white", font=("Segoe UI", 10, "bold"),
+                  relief="flat", width=12).pack(side=tk.LEFT)
 
         # Таблица
         columns = ("ID", "ФИО", "Пол", "Номер истории", "Год рожд.", "Возраст", "Диагноз",
                    "Начало лечения", "Окончание лечения", "Отделение", "Давление", "Результат", "Сеансы", "Номер курса")
-        self.tree = ttk.Treeview(self.table_frame, columns=columns, show="headings", height=20)
+        self.tree = ttk.Treeview(self.table_frame, columns=columns, show="headings", height=18)
         for col in columns:
             self.tree.heading(col, text=col)
-        widths = [40, 150, 50, 100, 70, 70, 120, 100, 100, 120, 100, 120, 70, 80]
+        widths = [40, 160, 50, 100, 70, 70, 130, 110, 110, 130, 100, 130, 70, 80]
         for col, w in zip(columns, widths):
             self.tree.column(col, width=w, anchor="center")
 
@@ -155,20 +187,122 @@ class MedicalDatabaseApp:
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         self.tree.bind('<Double-1>', self.open_patient_card)
-        tk.Button(self.table_frame, text="Обновить данные", command=self.show_records,
-                  bg="#0056b3", fg="white", font=("Segoe UI", 11, "bold"),
-                  relief="flat", width=15, padx=10, pady=8).pack(pady=10)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+    # ---------- Сортировка ----------
+    def change_sort(self):
+        """Обновляет порядок сортировки и перезагружает таблицу."""
+        choice = self.sort_var.get()
+        mapping = {
+            "По ID (новые сверху)": "id DESC",
+            "По ID (старые сверху)": "id ASC",
+            "По ФИО (А-Я)": "full_name COLLATE NOCASE ASC",
+            "По ФИО (Я-А)": "full_name COLLATE NOCASE DESC",
+            "По дате начала (новые)": "treatment_start_date DESC",
+            "По дате начала (старые)": "treatment_start_date ASC",
+            "По дате добавления (новые)": "id DESC",
+            "По дате добавления (старые)": "id ASC"
+        }
+        self.current_order = mapping.get(choice, "id DESC")
+        self.show_records()
+
+    # ---------- Архив ----------
     def toggle_archive(self):
         self.show_archived = not self.show_archived
         if self.show_archived:
-            self.archive_button.config(text="🗂 Скрыть архив", bg="#dc3545", width=16)
+            self.archive_button.config(text="🗂 Скрыть архив", bg="#dc3545", width=14)
         else:
-            self.archive_button.config(text="📂 Архив", bg="#6f42c1", width=12)
+            self.archive_button.config(text="📂 Архив", bg="#6f42c1", width=10)
         self.show_records()
 
+    # ---------- Отображение записей с сортировкой ----------
+    def show_records(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        hidden_flag = 1 if self.show_archived else 0
+        records = self.db.get_patients_sorted(hidden=hidden_flag, order_by=self.current_order)
+        for rec in records:
+            self._insert_tree_row(rec)
+
+    def _insert_tree_row(self, rec):
+        pressure_display = ""
+        if rec[10] is not None and rec[11] is not None:
+            pressure_display = f"{rec[10]} {rec[11]}"
+        values = (
+            rec[0], rec[1], rec[5] or "", rec[2] or "", rec[3] or "",
+            rec[4] or "", rec[6] or "", rec[7] or "", rec[8] or "",
+            rec[9] or "", pressure_display, rec[12] or "", rec[13] or 0, rec[14] or 0
+        )
+        self.tree.insert("", tk.END, values=values)
+
+    # ---------- Бэкап ----------
+    def backup_database(self):
+        """Создаёт резервную копию базы данных в выбранной папке."""
+        folder = filedialog.askdirectory(title="Выберите папку для сохранения бэкапа")
+        if not folder:
+            return
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_name = f"backup_{timestamp}.db"
+        backup_path = os.path.join(folder, backup_name)
+        try:
+            # Закрываем соединение, чтобы не было блокировки
+            self.db.close()
+            shutil.copy2(self.db.db_name, backup_path)
+            # Переподключаемся
+            self.db.connect()
+            messagebox.showinfo("Успех", f"Бэкап создан:\n{backup_path}")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось создать бэкап: {e}")
+            # Пытаемся переподключиться, если не получилось
+            try:
+                self.db.connect()
+            except:
+                pass
+
+    # ---------- Импорт ----------
+    def import_database(self):
+        """Заменяет текущую базу данных на выбранную из файла."""
+        file_path = filedialog.askopenfilename(
+            title="Выберите файл базы данных (.db)",
+            filetypes=[("Базы данных SQLite", "*.db"), ("Все файлы", "*.*")]
+        )
+        if not file_path:
+            return
+        if not os.path.isfile(file_path):
+            messagebox.showerror("Ошибка", "Файл не найден.")
+            return
+        # Подтверждение
+        if not messagebox.askyesno("Подтверждение", 
+                                   "Вы уверены, что хотите заменить текущую базу данных?\n"
+                                   "Текущие данные будут потеряны."):
+            return
+        try:
+            self.db.close()
+            # Переименовываем старую БД как резервную (на всякий случай)
+            old_path = self.db.db_name
+            backup_old = old_path + ".old"
+            if os.path.exists(old_path):
+                if os.path.exists(backup_old):
+                    os.remove(backup_old)
+                os.rename(old_path, backup_old)
+            # Копируем новый файл
+            shutil.copy2(file_path, old_path)
+            # Переподключаемся
+            self.db.connect()
+            # Обновляем интерфейс
+            self.show_records()
+            messagebox.showinfo("Успех", "База данных успешно импортирована.\n"
+                               "Старая БД сохранена как 'medical_records.db.old'")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось импортировать БД: {e}")
+            # Пытаемся восстановить соединение
+            try:
+                self.db.connect()
+            except:
+                pass
+
+    # ---------- Остальные методы (поиск, добавление, карточка и т.д.) ----------
     def open_patient_card(self, event):
         sel = self.tree.selection()
         if not sel:
@@ -294,7 +428,6 @@ class MedicalDatabaseApp:
             messagebox.showerror("Ошибка", f"Ошибка поиска: {e}")
 
     def _build_search_query(self, term, field):
-        # Используем COLLATE NOCASE для регистронезависимого поиска в текстовых полях
         if field == "Все поля":
             query = """
                 SELECT * FROM patients
@@ -343,7 +476,6 @@ class MedicalDatabaseApp:
             }
             db_field, is_text = mapping[field]
             
-            # Для ФИО - разбивка на слова с COLLATE NOCASE
             if field == "ФИО":
                 words = term.split()
                 if len(words) == 1:
@@ -355,7 +487,6 @@ class MedicalDatabaseApp:
                     params = tuple(f"%{w}%" for w in words)
                     return query, params
             
-            # Для давления ищем по числу и единице
             elif field == "Давление":
                 query = """
                     SELECT * FROM patients
@@ -366,7 +497,6 @@ class MedicalDatabaseApp:
                 return query, (f"%{term}%", f"%{term}%")
             
             else:
-                # Для остальных полей: если is_text, то с COLLATE NOCASE, иначе CAST
                 if is_text:
                     query = f"SELECT * FROM patients WHERE {db_field} LIKE ? COLLATE NOCASE ORDER BY id DESC"
                     params = (f"%{term}%",)
@@ -374,27 +504,6 @@ class MedicalDatabaseApp:
                     query = f"SELECT * FROM patients WHERE CAST({db_field} AS TEXT) LIKE ? ORDER BY id DESC"
                     params = (f"%{term}%",)
                 return query, params
-
-    def show_records(self):
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        if self.show_archived:
-            records = self.db.get_archived_patients()
-        else:
-            records = self.db.get_visible_patients()
-        for rec in records:
-            self._insert_tree_row(rec)
-
-    def _insert_tree_row(self, rec):
-        pressure_display = ""
-        if rec[10] is not None and rec[11] is not None:
-            pressure_display = f"{rec[10]} {rec[11]}"
-        values = (
-            rec[0], rec[1], rec[5] or "", rec[2] or "", rec[3] or "",
-            rec[4] or "", rec[6] or "", rec[7] or "", rec[8] or "",
-            rec[9] or "", pressure_display, rec[12] or "", rec[13] or 0, rec[14] or 0
-        )
-        self.tree.insert("", tk.END, values=values)
 
     def on_closing(self):
         self.db.close()
