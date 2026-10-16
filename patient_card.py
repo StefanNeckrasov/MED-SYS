@@ -11,13 +11,16 @@ else:
 
 from validators import Validators
 
+
 class PatientCardWindow:
     def __init__(self, parent, patient_data, callback, db):
         self.parent = parent
         self.patient_data = patient_data
         self.callback = callback
         self.db = db
-        self.is_archived = (patient_data[19] == 1) if len(patient_data) > 19 else False  # hidden поле
+        # hidden — индекс 19, deleted — индекс 20
+        self.is_archived = (patient_data[19] == 1) if len(patient_data) > 19 else False
+        self.is_deleted = (patient_data[20] == 1) if len(patient_data) > 20 else False
         self.window = tk.Toplevel(parent)
         self.window.title(f"Карточка пациента: {patient_data[1]}")
         self.window.geometry("700x800")
@@ -38,7 +41,7 @@ class PatientCardWindow:
     def create_widgets(self):
         # Заголовок
         hf = tk.Frame(self.window, bg="#0056b3", height=60)
-        hf.pack(fill=tk.X, pady=(0,10))
+        hf.pack(fill=tk.X, pady=(0, 10))
         tk.Label(hf, text="КАРТОЧКА ПАЦИЕНТА", font=("Segoe UI", 16, "bold"),
                  fg="white", bg="#0056b3").pack(pady=15)
 
@@ -49,13 +52,12 @@ class PatientCardWindow:
         scrollbar = ttk.Scrollbar(main, orient=tk.VERTICAL, command=canvas.yview)
         self.scrollable_frame = tk.Frame(canvas, bg="#f0f0f0")
         self.scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0,0), window=self.scrollable_frame, anchor="nw")
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Поля (аналогично main)
         labels = [
             ("ID пациента:", "readonly"),
             ("Номер истории болезни:", "entry"),
@@ -72,8 +74,8 @@ class PatientCardWindow:
                            "колопроктологическое", "травматолог ортопедическое",
                            "гинекологическое", "оториноларингологическое",
                            "отделение челюстно-лицевой хирургии", "офтальмологическое",
-                           "амбулаторное", "неврологическое", "1 кардиологиологическое", 
-                           "2 кардиологическое", "1 терапевтическое", "2 терапевтическое", 
+                           "амбулаторное", "неврологическое", "1 кардиологиологическое",
+                           "2 кардиологическое", "1 терапевтическое", "2 терапевтическое",
                            "ревматологическое", "химиотерапевтическое", "гастроэнтерологическое", "пульмонологическое"]),
             ("Давление (число):", "pressure"),
             ("Показания к использованию:", ["Плановое", "Срочное"]),
@@ -125,45 +127,62 @@ class PatientCardWindow:
         btn_frame = tk.Frame(self.scrollable_frame, bg="#f0f0f0")
         btn_frame.grid(row=self.row, column=0, columnspan=2, pady=20)
 
-        # Стандартные кнопки
+        # Сохранить изменения
         tk.Button(btn_frame, text="💾 Сохранить изменения", command=self.save_changes,
                   bg="#28a745", fg="white", font=("Segoe UI", 11, "bold"),
                   relief="flat", width=20, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
 
-        # Кнопка "Закрыть и сохранить" (архивирует)
+        # Закрыть и сохранить (архивирует)
         tk.Button(btn_frame, text="📥 Закрыть и сохранить", command=self.close_and_save,
                   bg="#ffc107", fg="black", font=("Segoe UI", 11, "bold"),
                   relief="flat", width=20, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
 
-        # Новая кнопка "Вернуть из архива" – показываем только для архивных записей
+        # Вернуть из архива
         if self.is_archived:
             tk.Button(btn_frame, text="↩ Вернуть из архива", command=self.restore_from_archive,
                       bg="#007bff", fg="white", font=("Segoe UI", 11, "bold"),
                       relief="flat", width=18, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
 
+        # Восстановить из корзины
+        if self.is_deleted:
+            tk.Button(btn_frame, text="↩ Восстановить", command=self.restore_from_trash,
+                      bg="#28a745", fg="white", font=("Segoe UI", 11, "bold"),
+                      relief="flat", width=18, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
+
+        # Удалить (мягкое или безвозвратное)
+        if self.is_deleted:
+            tk.Button(btn_frame, text="🗑 Удалить навсегда", command=self.delete_permanently,
+                      bg="#dc3545", fg="white", font=("Segoe UI", 11, "bold"),
+                      relief="flat", width=20, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
+        else:
+            tk.Button(btn_frame, text="🗑 В корзину", command=self.soft_delete,
+                      bg="#dc3545", fg="white", font=("Segoe UI", 11, "bold"),
+                      relief="flat", width=15, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
+
+        # Печать
         tk.Button(btn_frame, text="🖨 Печать", command=self.print_card,
                   bg="#17a2b8", fg="white", font=("Segoe UI", 11, "bold"),
                   relief="flat", width=15, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
 
+        # Отмена
         tk.Button(btn_frame, text="✖ Отмена", command=self.window.destroy,
                   bg="#6c757d", fg="white", font=("Segoe UI", 11, "bold"),
                   relief="flat", width=15, padx=10, pady=8, cursor="hand2").pack(side=tk.LEFT, padx=5)
 
         def on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         canvas.bind_all("<MouseWheel>", on_mousewheel)
 
     def fill_data(self):
         """Заполнение полей данными пациента."""
         try:
             p = self.patient_data
-            # ID
             e = self.entries["ID пациента:"]
             e.configure(state="normal")
             e.delete(0, tk.END)
             e.insert(0, str(p[0]))
             e.configure(state="readonly")
-            # Остальные поля
+
             self._set_entry("Номер истории болезни:", p[2])
             self._set_entry("ФИО пациента:", p[1])
             self._set_entry("Год рождения:", p[3])
@@ -195,12 +214,11 @@ class PatientCardWindow:
         self.entries[label].insert(0, str(value) if value is not None else "")
 
     def _set_combo(self, label, value):
-        """Устанавливает значение комбобокса, только если оно есть в списке допустимых."""
         combo = self.entries[label]
         if value and value in combo['values']:
             combo.set(value)
         else:
-            combo.set("")   # сбрасываем, чтобы не было невалидного значения
+            combo.set("")
 
     def _set_text(self, label, value):
         widget = self.entries[label]
@@ -213,7 +231,7 @@ class PatientCardWindow:
         return widget.get("1.0", "end-1c").strip()
 
     def _validate_and_prepare(self):
-        """Проверка полей и сбор кортежа данных для сохранения. Возвращает данные или None при ошибке."""
+        """Проверка полей и сбор кортежа данных для сохранения."""
         try:
             full_name = self.entries["ФИО пациента:"].get().strip()
             case_number = self.entries["Номер истории болезни:"].get().strip()
@@ -286,34 +304,75 @@ class PatientCardWindow:
             messagebox.showerror("Ошибка", f"Ошибка при проверке данных: {e}")
             return None
 
-    def _save_changes(self, hidden=None):
-        """Фактическое сохранение в БД. hidden = 0/1 или None."""
+    def _save_changes(self, hidden=None, deleted=None):
+        """Фактическое сохранение в БД."""
         updated_data = self._validate_and_prepare()
         if updated_data is None:
             return False
-        self.db.update_patient(self.patient_data[0], updated_data, hidden=hidden)
+        self.db.update_patient(self.patient_data[0], updated_data, hidden=hidden, deleted=deleted)
         return True
 
     def save_changes(self):
-        """Обычное сохранение без архивирования."""
-        if self._save_changes(hidden=0):
+        """Обычное сохранение без архивирования и удаления."""
+        if self._save_changes(hidden=0, deleted=0):
             messagebox.showinfo("Успех", "Данные пациента обновлены.")
             self.callback()
             self.window.destroy()
 
     def close_and_save(self):
-        """Сохранить и переместить в архив (скрыть из основного списка)."""
-        if self._save_changes(hidden=1):
+        """Сохранить и переместить в архив."""
+        if self._save_changes(hidden=1, deleted=0):
             messagebox.showinfo("Успех", "Пациент сохранён и перемещён в архив.")
             self.callback()
             self.window.destroy()
 
     def restore_from_archive(self):
-        """Вернуть пациента из архива (сделать видимым)."""
-        if self._save_changes(hidden=0):
+        """Вернуть пациента из архива."""
+        if self._save_changes(hidden=0, deleted=0):
             messagebox.showinfo("Успех", "Пациент возвращён из архива.")
             self.callback()
             self.window.destroy()
+
+    def restore_from_trash(self):
+        """Восстановить пациента из корзины."""
+        if self._save_changes(hidden=0, deleted=0):
+            messagebox.showinfo("Успех", "Пациент восстановлен.")
+            self.callback()
+            self.window.destroy()
+
+    def soft_delete(self):
+        """Переместить пациента в корзину (мягкое удаление)."""
+        if not messagebox.askyesno(
+            "Подтверждение",
+            f"Переместить пациента в корзину?\n\n"
+            f"{self.patient_data[1]}\n(ID: {self.patient_data[0]})\n\n"
+            "Запись можно будет восстановить."
+        ):
+            return
+        try:
+            self.db.soft_delete_patient(self.patient_data[0])
+            messagebox.showinfo("Готово", "Пациент перемещён в корзину.")
+            self.callback()
+            self.window.destroy()
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось переместить пациента: {e}")
+
+    def delete_permanently(self):
+        """Безвозвратное удаление (только для корзины)."""
+        if not messagebox.askyesno(
+            "Безвозвратное удаление",
+            f"Удалить пациента НАВСЕГДА?\n\n"
+            f"{self.patient_data[1]}\n(ID: {self.patient_data[0]})\n\n"
+            "Это действие необратимо!"
+        ):
+            return
+        try:
+            self.db.delete_patient_permanently(self.patient_data[0])
+            messagebox.showinfo("Готово", "Пациент удалён безвозвратно.")
+            self.callback()
+            self.window.destroy()
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось удалить пациента: {e}")
 
     def print_card(self):
         """Формирование печатного представления и отправка на принтер."""

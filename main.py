@@ -16,6 +16,7 @@ from database import Database
 from validators import Validators
 from patient_card import PatientCardWindow
 
+
 class MedicalDatabaseApp:
     def __init__(self, root):
         self.root = root
@@ -24,7 +25,8 @@ class MedicalDatabaseApp:
         self.root.configure(bg="#f0f0f0")
         self.db = Database()
         self.show_archived = False
-        self.current_order = "id DESC"  # сортировка по умолчанию
+        self.show_deleted = False          # показ корзины
+        self.current_order = "id DESC"     # сортировка по умолчанию
         self.create_widgets()
         self.show_records()
 
@@ -59,8 +61,8 @@ class MedicalDatabaseApp:
                            "колопроктологическое", "травматолог ортопедическое",
                            "гинекологическое", "оториноларингологическое",
                            "отделение челюстно-лицевой хирургии", "офтальмологическое",
-                           "амбулаторное", "неврологическое", "1 кардиологиологическое", 
-                           "2 кардиологическое", "1 терапевтическое", "2 терапевтическое", 
+                           "амбулаторное", "неврологическое", "1 кардиологиологическое",
+                           "2 кардиологическое", "1 терапевтическое", "2 терапевтическое",
                            "ревматологическое", "химиотерапевтическое", "гастроэнтерологическое", "пульмонологическое"]),
             ("Давление (число):", "pressure"),
             ("Показания к использованию:", ["Плановое", "Срочное"]),
@@ -113,32 +115,32 @@ class MedicalDatabaseApp:
                                          font=("Segoe UI", 13, "bold"), bg="#f0f0f0", fg="#0056b3")
         self.table_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        # Панель управления (поиск, сортировка, бэкап, импорт)
+        # Панель управления (поиск, сортировка, бэкап, импорт, корзина, удаление)
         control_frame = tk.Frame(self.table_frame, bg="#f0f0f0")
         control_frame.pack(fill=tk.X, padx=10, pady=10)
 
         # Поиск
         tk.Label(control_frame, text="Поиск:", font=("Segoe UI", 10, "bold"), bg="#f0f0f0")\
-            .pack(side=tk.LEFT, padx=(0,5))
+            .pack(side=tk.LEFT, padx=(0, 5))
         self.search_field_var = tk.StringVar(value="Все поля")
         fields = ["Все поля", "ФИО", "Номер истории", "Год рождения", "Возраст", "Пол", "Диагноз",
                   "Дата начала", "Дата окончания", "Отделение", "Давление", "Результат", "Сеансы", "Номер курса",
                   "Показания", "Осложнения", "Эффект", "Примечания"]
         ttk.Combobox(control_frame, textvariable=self.search_field_var, values=fields,
-                     state="readonly", width=14).pack(side=tk.LEFT, padx=(0,5))
+                     state="readonly", width=14).pack(side=tk.LEFT, padx=(0, 5))
         self.search_entry = tk.Entry(control_frame, width=20, font=("Segoe UI", 10))
-        self.search_entry.pack(side=tk.LEFT, padx=(0,5))
+        self.search_entry.pack(side=tk.LEFT, padx=(0, 5))
         self.search_entry.bind('<Return>', lambda e: self.search_records())
         tk.Button(control_frame, text="Найти", command=self.search_records,
                   bg="#28a745", fg="white", font=("Segoe UI", 10, "bold"),
-                  relief="flat", width=8).pack(side=tk.LEFT, padx=(0,5))
+                  relief="flat", width=8).pack(side=tk.LEFT, padx=(0, 5))
         tk.Button(control_frame, text="Сброс", command=self.reset_search,
                   bg="#ffc107", fg="black", font=("Segoe UI", 10, "bold"),
-                  relief="flat", width=8).pack(side=tk.LEFT, padx=(0,10))
+                  relief="flat", width=8).pack(side=tk.LEFT, padx=(0, 10))
 
         # Сортировка
         tk.Label(control_frame, text="Сортировка:", font=("Segoe UI", 10, "bold"), bg="#f0f0f0")\
-            .pack(side=tk.LEFT, padx=(0,5))
+            .pack(side=tk.LEFT, padx=(0, 5))
         self.sort_var = tk.StringVar(value="По ID (новые сверху)")
         sort_options = [
             "По ID (новые сверху)",
@@ -152,22 +154,35 @@ class MedicalDatabaseApp:
         ]
         sort_combo = ttk.Combobox(control_frame, textvariable=self.sort_var, values=sort_options,
                                   state="readonly", width=20)
-        sort_combo.pack(side=tk.LEFT, padx=(0,10))
+        sort_combo.pack(side=tk.LEFT, padx=(0, 10))
         sort_combo.bind('<<ComboboxSelected>>', lambda e: self.change_sort())
 
         # Кнопки архива, бэкапа, импорта
         self.archive_button = tk.Button(control_frame, text="📂 Архив", command=self.toggle_archive,
                                         bg="#6f42c1", fg="white", font=("Segoe UI", 10, "bold"),
                                         relief="flat", width=10)
-        self.archive_button.pack(side=tk.LEFT, padx=(0,5))
+        self.archive_button.pack(side=tk.LEFT, padx=(0, 5))
 
         tk.Button(control_frame, text="💾 Бэкап БД", command=self.backup_database,
                   bg="#17a2b8", fg="white", font=("Segoe UI", 10, "bold"),
-                  relief="flat", width=12).pack(side=tk.LEFT, padx=(0,5))
+                  relief="flat", width=12).pack(side=tk.LEFT, padx=(0, 5))
 
         tk.Button(control_frame, text="📂 Импорт БД", command=self.import_database,
                   bg="#fd7e14", fg="white", font=("Segoe UI", 10, "bold"),
-                  relief="flat", width=12).pack(side=tk.LEFT)
+                  relief="flat", width=12).pack(side=tk.LEFT, padx=(0, 5))
+
+        # Корзина
+        self.trash_button = tk.Button(
+            control_frame, text="🗑 Корзина", command=self.toggle_trash,
+            bg="#6c757d", fg="white", font=("Segoe UI", 10, "bold"),
+            relief="flat", width=12
+        )
+        self.trash_button.pack(side=tk.LEFT, padx=(0, 5))
+
+        # Удалить (мягкое)
+        tk.Button(control_frame, text="🗑 Удалить", command=self.soft_delete_selected,
+                  bg="#dc3545", fg="white", font=("Segoe UI", 10, "bold"),
+                  relief="flat", width=10).pack(side=tk.LEFT)
 
         # Таблица
         columns = ("ID", "ФИО", "Пол", "Номер истории", "Год рожд.", "Возраст", "Диагноз",
@@ -216,12 +231,47 @@ class MedicalDatabaseApp:
             self.archive_button.config(text="📂 Архив", bg="#6f42c1", width=10)
         self.show_records()
 
+    # ---------- Корзина ----------
+    def toggle_trash(self):
+        self.show_deleted = not self.show_deleted
+        if self.show_deleted:
+            self.trash_button.config(text="🗑 Скрыть корзину", bg="#dc3545", width=16)
+        else:
+            self.trash_button.config(text="🗑 Корзина", bg="#6c757d", width=12)
+        self.show_records()
+
+    def soft_delete_selected(self):
+        """Переместить выделенную запись в корзину (мягкое удаление)."""
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Внимание", "Сначала выберите запись в таблице.")
+            return
+        item = self.tree.item(sel[0])
+        patient_id = item['values'][0]
+        full_name = item['values'][1]
+        if not messagebox.askyesno(
+            "Подтверждение",
+            f"Переместить пациента в корзину?\n\n"
+            f"{full_name}\n(ID: {patient_id})\n\n"
+            "Запись можно будет восстановить."
+        ):
+            return
+        try:
+            self.db.soft_delete_patient(patient_id)
+            self.show_records()
+            messagebox.showinfo("Готово", "Запись перемещена в корзину.")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось переместить запись: {e}")
+
     # ---------- Отображение записей с сортировкой ----------
     def show_records(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
         hidden_flag = 1 if self.show_archived else 0
-        records = self.db.get_patients_sorted(hidden=hidden_flag, order_by=self.current_order)
+        deleted_flag = 1 if self.show_deleted else 0
+        records = self.db.get_patients_sorted(
+            hidden=hidden_flag, deleted=deleted_flag, order_by=self.current_order
+        )
         for rec in records:
             self._insert_tree_row(rec)
 
@@ -246,15 +296,12 @@ class MedicalDatabaseApp:
         backup_name = f"backup_{timestamp}.db"
         backup_path = os.path.join(folder, backup_name)
         try:
-            # Закрываем соединение, чтобы не было блокировки
             self.db.close()
             shutil.copy2(self.db.db_name, backup_path)
-            # Переподключаемся
             self.db.connect()
             messagebox.showinfo("Успех", f"Бэкап создан:\n{backup_path}")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось создать бэкап: {e}")
-            # Пытаемся переподключиться, если не получилось
             try:
                 self.db.connect()
             except:
@@ -272,37 +319,31 @@ class MedicalDatabaseApp:
         if not os.path.isfile(file_path):
             messagebox.showerror("Ошибка", "Файл не найден.")
             return
-        # Подтверждение
-        if not messagebox.askyesno("Подтверждение", 
+        if not messagebox.askyesno("Подтверждение",
                                    "Вы уверены, что хотите заменить текущую базу данных?\n"
                                    "Текущие данные будут потеряны."):
             return
         try:
             self.db.close()
-            # Переименовываем старую БД как резервную (на всякий случай)
             old_path = self.db.db_name
             backup_old = old_path + ".old"
             if os.path.exists(old_path):
                 if os.path.exists(backup_old):
                     os.remove(backup_old)
                 os.rename(old_path, backup_old)
-            # Копируем новый файл
             shutil.copy2(file_path, old_path)
-            # Переподключаемся
             self.db.connect()
-            # Обновляем интерфейс
             self.show_records()
             messagebox.showinfo("Успех", "База данных успешно импортирована.\n"
                                "Старая БД сохранена как 'medical_records.db.old'")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось импортировать БД: {e}")
-            # Пытаемся восстановить соединение
             try:
                 self.db.connect()
             except:
                 pass
 
-    # ---------- Остальные методы (поиск, добавление, карточка и т.д.) ----------
+    # ---------- Остальные методы ----------
     def open_patient_card(self, event):
         sel = self.tree.selection()
         if not sel:
@@ -475,7 +516,7 @@ class MedicalDatabaseApp:
                 "Примечания": ("notes", True),
             }
             db_field, is_text = mapping[field]
-            
+
             if field == "ФИО":
                 words = term.split()
                 if len(words) == 1:
@@ -486,7 +527,7 @@ class MedicalDatabaseApp:
                     query = f"SELECT * FROM patients WHERE {conditions} ORDER BY id DESC"
                     params = tuple(f"%{w}%" for w in words)
                     return query, params
-            
+
             elif field == "Давление":
                 query = """
                     SELECT * FROM patients
@@ -495,7 +536,7 @@ class MedicalDatabaseApp:
                     ORDER BY id DESC
                 """
                 return query, (f"%{term}%", f"%{term}%")
-            
+
             else:
                 if is_text:
                     query = f"SELECT * FROM patients WHERE {db_field} LIKE ? COLLATE NOCASE ORDER BY id DESC"
@@ -508,6 +549,7 @@ class MedicalDatabaseApp:
     def on_closing(self):
         self.db.close()
         self.root.destroy()
+
 
 if __name__ == "__main__":
     root = tk.Tk()
