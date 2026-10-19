@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox, filedialog
 import os
 import sys
 import shutil
+import json
 from datetime import datetime
 
 if getattr(sys, 'frozen', False):
@@ -17,6 +18,45 @@ from validators import Validators
 from patient_card import PatientCardWindow
 
 
+# ---------- Настройки авто-бэкапа ----------
+CONFIG_FILE_NAME = "settings.json"
+BACKUP_DIR_NAME = "backups"
+DEFAULT_CONFIG = {
+    "backup_interval_minutes": 10,   # 0 = отключено
+    "auto_backup_on_start": True,
+    "max_auto_backups": 20
+}
+
+
+def load_config(base_path):
+    """Загружает настройки из settings.json, дополняя их значениями по умолчанию."""
+    config_path = os.path.join(base_path, CONFIG_FILE_NAME)
+    config = dict(DEFAULT_CONFIG)
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                for k in DEFAULT_CONFIG:
+                    if k in data:
+                        config[k] = data[k]
+    except Exception as e:
+        print(f"Ошибка загрузки настроек: {e}")
+    return config
+
+
+def save_config(base_path, config):
+    """Сохраняет настройки в settings.json."""
+    config_path = os.path.join(base_path, CONFIG_FILE_NAME)
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"Ошибка сохранения настроек: {e}")
+        return False
+
+
 class MedicalDatabaseApp:
     def __init__(self, root):
         self.root = root
@@ -25,10 +65,27 @@ class MedicalDatabaseApp:
         self.root.configure(bg="#f0f0f0")
         self.db = Database()
         self.show_archived = False
-        self.show_deleted = False          # показ корзины
-        self.current_order = "id DESC"     # сортировка по умолчанию
+        self.show_deleted = False
+        self.current_order = "id DESC"
+
+        # --- Конфиг и папка бэкапов ---
+        self.config = load_config(self.db.base_path)
+        self.backup_dir = os.path.join(self.db.base_path, BACKUP_DIR_NAME)
+        try:
+            os.makedirs(self.backup_dir, exist_ok=True)
+        except Exception as e:
+            print(f"Не удалось создать папку бэкапов: {e}")
+
+        self._backup_timer_id = None
+        self._settings_window = None
+
         self.create_widgets()
         self.show_records()
+
+        # --- Стартовый бэкап и планирование ---
+        if self.config.get("auto_backup_on_start", True):
+            self.auto_backup()
+        self.reschedule_backup()
 
     def create_widgets(self):
         # Заголовок
@@ -89,7 +146,6 @@ class MedicalDatabaseApp:
                 unit_combo.pack(side=tk.LEFT, padx=5)
                 unit_combo.set("")
                 self.entries[label_text] = (val_entry, unit_combo)
-
             elif isinstance(widget_type, list):
                 combo = ttk.Combobox(self.input_frame, values=widget_type, state="readonly", width=27)
                 combo.grid(row=i, column=1, padx=10, pady=5, sticky="w")
@@ -115,7 +171,7 @@ class MedicalDatabaseApp:
                                          font=("Segoe UI", 13, "bold"), bg="#f0f0f0", fg="#0056b3")
         self.table_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        # Панель управления (поиск, сортировка, бэкап, импорт, корзина, удаление)
+        # Панель управления
         control_frame = tk.Frame(self.table_frame, bg="#f0f0f0")
         control_frame.pack(fill=tk.X, padx=10, pady=10)
 
@@ -157,21 +213,12 @@ class MedicalDatabaseApp:
         sort_combo.pack(side=tk.LEFT, padx=(0, 10))
         sort_combo.bind('<<ComboboxSelected>>', lambda e: self.change_sort())
 
-        # Кнопки архива, бэкапа, импорта
+        # Кнопки архива, корзины, удаления
         self.archive_button = tk.Button(control_frame, text="📂 Архив", command=self.toggle_archive,
                                         bg="#6f42c1", fg="white", font=("Segoe UI", 10, "bold"),
                                         relief="flat", width=10)
         self.archive_button.pack(side=tk.LEFT, padx=(0, 5))
 
-        tk.Button(control_frame, text="💾 Бэкап БД", command=self.backup_database,
-                  bg="#17a2b8", fg="white", font=("Segoe UI", 10, "bold"),
-                  relief="flat", width=12).pack(side=tk.LEFT, padx=(0, 5))
-
-        tk.Button(control_frame, text="📂 Импорт БД", command=self.import_database,
-                  bg="#fd7e14", fg="white", font=("Segoe UI", 10, "bold"),
-                  relief="flat", width=12).pack(side=tk.LEFT, padx=(0, 5))
-
-        # Корзина
         self.trash_button = tk.Button(
             control_frame, text="🗑 Корзина", command=self.toggle_trash,
             bg="#6c757d", fg="white", font=("Segoe UI", 10, "bold"),
@@ -179,10 +226,18 @@ class MedicalDatabaseApp:
         )
         self.trash_button.pack(side=tk.LEFT, padx=(0, 5))
 
-        # Удалить (мягкое)
         tk.Button(control_frame, text="🗑 Удалить", command=self.soft_delete_selected,
                   bg="#dc3545", fg="white", font=("Segoe UI", 10, "bold"),
-                  relief="flat", width=10).pack(side=tk.LEFT)
+                  relief="flat", width=10).pack(side=tk.LEFT, padx=(0, 10))
+
+        # Разделитель
+        ttk.Separator(control_frame, orient=tk.VERTICAL)\
+            .pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10), pady=2)
+
+        # Кнопка настроек
+        tk.Button(control_frame, text="⚙  Настройки", command=self.open_settings,
+                  bg="#495057", fg="white", font=("Segoe UI", 10, "bold"),
+                  relief="flat", width=14).pack(side=tk.LEFT)
 
         # Таблица
         columns = ("ID", "ФИО", "Пол", "Номер истории", "Год рожд.", "Возраст", "Диагноз",
@@ -202,12 +257,141 @@ class MedicalDatabaseApp:
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         self.tree.bind('<Double-1>', self.open_patient_card)
-
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    # ====================== ОКНО НАСТРОЕК ======================
+    def open_settings(self):
+        """Открывает окно настроек (одно на приложение)."""
+        # Если окно уже открыто — поднимаем на передний план
+        if self._settings_window is not None:
+            try:
+                if self._settings_window.winfo_exists():
+                    self._settings_window.deiconify()
+                    self._settings_window.lift()
+                    self._settings_window.focus_set()
+                    return
+            except tk.TclError:
+                pass
+
+        win = tk.Toplevel(self.root)
+        self._settings_window = win
+        win.title("Настройки")
+        win.configure(bg="#f0f0f0")
+        win.resizable(False, False)
+        win.transient(self.root)
+
+        # Заголовок
+        hf = tk.Frame(win, bg="#0056b3", height=60)
+        hf.pack(fill=tk.X)
+        tk.Label(hf, text="⚙  НАСТРОЙКИ", font=("Segoe UI", 16, "bold"),
+                 fg="white", bg="#0056b3").pack(pady=15)
+
+        body = tk.Frame(win, bg="#f0f0f0")
+        body.pack(fill=tk.BOTH, expand=True, padx=20, pady=15)
+
+        # ===== Секция: Резервное копирование =====
+        sec1 = tk.LabelFrame(body, text="  📦  Резервное копирование  ",
+                              font=("Segoe UI", 11, "bold"),
+                              bg="#f0f0f0", fg="#0056b3", bd=1, relief="groove")
+        sec1.pack(fill=tk.X, pady=(0, 15))
+
+        row1 = tk.Frame(sec1, bg="#f0f0f0")
+        row1.pack(fill=tk.X, padx=15, pady=(12, 6))
+        tk.Label(row1, text="Интервал:", font=("Segoe UI", 10),
+                 bg="#f0f0f0", width=22, anchor="w").pack(side=tk.LEFT)
+        self.backup_interval_var = tk.StringVar()
+        interval_options = ["Выкл.", "5 мин", "10 мин", "15 мин", "30 мин"]
+        cur_min = self.config.get("backup_interval_minutes", 10)
+        cur_label = "Выкл." if not cur_min else f"{cur_min} мин"
+        if cur_label not in interval_options:
+            cur_label = "10 мин"
+        self.backup_interval_var.set(cur_label)
+        interval_combo = ttk.Combobox(row1, textvariable=self.backup_interval_var,
+                                       values=interval_options, state="readonly", width=12)
+        interval_combo.pack(side=tk.LEFT)
+        interval_combo.bind('<<ComboboxSelected>>', lambda e: self.change_backup_interval())
+
+        row2 = tk.Frame(sec1, bg="#f0f0f0")
+        row2.pack(fill=tk.X, padx=15, pady=6)
+        self.auto_start_var = tk.BooleanVar(value=bool(self.config.get("auto_backup_on_start", True)))
+        tk.Checkbutton(row2, text="Создавать копию при запуске программы",
+                       variable=self.auto_start_var, command=self.toggle_auto_start,
+                       bg="#f0f0f0", font=("Segoe UI", 10), anchor="w").pack(side=tk.LEFT)
+
+        row3 = tk.Frame(sec1, bg="#f0f0f0")
+        row3.pack(fill=tk.X, padx=15, pady=6)
+        tk.Label(row3, text="Хранить копий:", font=("Segoe UI", 10),
+                 bg="#f0f0f0", width=22, anchor="w").pack(side=tk.LEFT)
+        self.max_backups_var = tk.StringVar(value=str(self.config.get("max_auto_backups", 20)))
+        max_entry = tk.Entry(row3, textvariable=self.max_backups_var, width=12, font=("Segoe UI", 10))
+        max_entry.pack(side=tk.LEFT)
+        max_entry.bind('<FocusOut>', lambda e: self.change_max_backups())
+        max_entry.bind('<Return>', lambda e: self.change_max_backups())
+        tk.Label(row3, text="(более старые удаляются)", font=("Segoe UI", 9),
+                 fg="#888", bg="#f0f0f0").pack(side=tk.LEFT, padx=(8, 0))
+
+        row4 = tk.Frame(sec1, bg="#f0f0f0")
+        row4.pack(fill=tk.X, padx=15, pady=(12, 15))
+        tk.Button(row4, text="📁 Открыть папку", command=self.open_backups_folder,
+                  bg="#20c997", fg="white", font=("Segoe UI", 10, "bold"),
+                  relief="flat", padx=12, pady=6, cursor="hand2").pack(side=tk.LEFT, padx=(0, 8))
+        tk.Button(row4, text="💾 Создать бэкап сейчас", command=self.backup_database,
+                  bg="#17a2b8", fg="white", font=("Segoe UI", 10, "bold"),
+                  relief="flat", padx=12, pady=6, cursor="hand2").pack(side=tk.LEFT)
+
+        # ===== Секция: Импорт БД =====
+        sec2 = tk.LabelFrame(body, text="  📥  Импорт базы данных  ",
+                              font=("Segoe UI", 11, "bold"),
+                              bg="#f0f0f0", fg="#0056b3", bd=1, relief="groove")
+        sec2.pack(fill=tk.X, pady=(0, 15))
+
+        tk.Label(sec2, text="Заменить текущую базу данных на выбранную из файла.\n"
+                            "Текущая БД будет сохранена как .old резервная копия.",
+                 font=("Segoe UI", 9), bg="#f0f0f0", fg="#666", justify="left")\
+            .pack(anchor="w", padx=15, pady=(12, 8))
+
+        tk.Button(sec2, text="📂 Выбрать файл БД...", command=self.import_database,
+                  bg="#fd7e14", fg="white", font=("Segoe UI", 10, "bold"),
+                  relief="flat", padx=12, pady=6, cursor="hand2")\
+            .pack(anchor="w", padx=15, pady=(0, 15))
+
+        # ===== Секция: Информация =====
+        sec3 = tk.LabelFrame(body, text="  ℹ  Расположение файлов  ",
+                              font=("Segoe UI", 11, "bold"),
+                              bg="#f0f0f0", fg="#0056b3", bd=1, relief="groove")
+        sec3.pack(fill=tk.X)
+
+        tk.Label(sec3, text="База данных:", font=("Segoe UI", 9, "bold"),
+                 bg="#f0f0f0").pack(anchor="w", padx=15, pady=(12, 0))
+        tk.Label(sec3, text=self.db.db_name, font=("Segoe UI", 9),
+                 bg="#f0f0f0", fg="#666", wraplength=480, justify="left")\
+            .pack(anchor="w", padx=15)
+
+        tk.Label(sec3, text="Папка бэкапов:", font=("Segoe UI", 9, "bold"),
+                 bg="#f0f0f0").pack(anchor="w", padx=15, pady=(8, 0))
+        tk.Label(sec3, text=self.backup_dir, font=("Segoe UI", 9),
+                 bg="#f0f0f0", fg="#666", wraplength=480, justify="left")\
+            .pack(anchor="w", padx=15, pady=(0, 15))
+
+        # ===== Кнопка закрытия =====
+        footer = tk.Frame(win, bg="#f0f0f0")
+        footer.pack(fill=tk.X, pady=(0, 15))
+        tk.Button(footer, text="Закрыть", command=win.destroy,
+                  bg="#6c757d", fg="white", font=("Segoe UI", 11, "bold"),
+                  relief="flat", width=15, pady=8, cursor="hand2").pack()
+
+        win.bind('<Escape>', lambda e: win.destroy())
+
+        # Центрирование окна
+        win.update_idletasks()
+        w = win.winfo_reqwidth()
+        h = win.winfo_reqheight()
+        x = (win.winfo_screenwidth() // 2) - (w // 2)
+        y = (win.winfo_screenheight() // 2) - (h // 2)
+        win.geometry(f'{w}x{h}+{x}+{y}')
 
     # ---------- Сортировка ----------
     def change_sort(self):
-        """Обновляет порядок сортировки и перезагружает таблицу."""
         choice = self.sort_var.get()
         mapping = {
             "По ID (новые сверху)": "id DESC",
@@ -241,7 +425,6 @@ class MedicalDatabaseApp:
         self.show_records()
 
     def soft_delete_selected(self):
-        """Переместить выделенную запись в корзину (мягкое удаление)."""
         sel = self.tree.selection()
         if not sel:
             messagebox.showwarning("Внимание", "Сначала выберите запись в таблице.")
@@ -263,7 +446,7 @@ class MedicalDatabaseApp:
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось переместить запись: {e}")
 
-    # ---------- Отображение записей с сортировкой ----------
+    # ---------- Отображение записей ----------
     def show_records(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
@@ -286,30 +469,119 @@ class MedicalDatabaseApp:
         )
         self.tree.insert("", tk.END, values=values)
 
-    # ---------- Бэкап ----------
+    # ---------- Ручной бэкап ----------
     def backup_database(self):
-        """Создаёт резервную копию базы данных в выбранной папке."""
         folder = filedialog.askdirectory(title="Выберите папку для сохранения бэкапа")
         if not folder:
             return
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_name = f"backup_{timestamp}.db"
+        backup_name = f"manual_backup_{timestamp}.db"
         backup_path = os.path.join(folder, backup_name)
         try:
-            self.db.close()
-            shutil.copy2(self.db.db_name, backup_path)
-            self.db.connect()
-            messagebox.showinfo("Успех", f"Бэкап создан:\n{backup_path}")
+            if self.db.backup_to(backup_path):
+                messagebox.showinfo("Успех", f"Бэкап создан:\n{backup_path}")
+            else:
+                messagebox.showerror("Ошибка", "Не удалось создать бэкап.")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось создать бэкап: {e}")
+
+    # ---------- Авто-бэкап ----------
+    def change_backup_interval(self):
+        """Вызывается при смене интервала авто-бэкапа в настройках."""
+        label = self.backup_interval_var.get()
+        mapping = {"Выкл.": 0, "5 мин": 5, "10 мин": 10, "15 мин": 15, "30 мин": 30}
+        minutes = mapping.get(label, 10)
+        self.config["backup_interval_minutes"] = minutes
+        save_config(self.db.base_path, self.config)
+        self.reschedule_backup()
+
+    def change_max_backups(self):
+        """Валидация и сохранение количества хранимых копий."""
+        try:
+            val = int(self.max_backups_var.get().strip())
+            if val < 1:
+                val = 1
+            elif val > 1000:
+                val = 1000
+        except (ValueError, AttributeError):
+            val = 20
+        self.max_backups_var.set(str(val))
+        self.config["max_auto_backups"] = val
+        save_config(self.db.base_path, self.config)
+
+    def toggle_auto_start(self):
+        """Включение/выключение бэкапа при запуске."""
+        self.config["auto_backup_on_start"] = bool(self.auto_start_var.get())
+        save_config(self.db.base_path, self.config)
+
+    def reschedule_backup(self):
+        """Отменяет текущий таймер и планирует следующий по актуальному интервалу."""
+        if self._backup_timer_id is not None:
             try:
-                self.db.connect()
-            except:
+                self.root.after_cancel(self._backup_timer_id)
+            except Exception:
                 pass
+            self._backup_timer_id = None
+        minutes = self.config.get("backup_interval_minutes", 10)
+        if minutes and minutes > 0:
+            self._backup_timer_id = self.root.after(
+                minutes * 60 * 1000, self._scheduled_backup
+            )
+
+    def _scheduled_backup(self):
+        self._backup_timer_id = None
+        self.auto_backup()
+        self.reschedule_backup()
+
+    def auto_backup(self):
+        """Создаёт автоматический бэкап и чистит старые."""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = os.path.join(self.backup_dir, f"auto_backup_{timestamp}.db")
+            if self.db.backup_to(backup_path):
+                self._rotate_backups()
+                print(f"[AUTO-BACKUP] Создан: {backup_path}")
+            else:
+                print("[AUTO-BACKUP] Не удалось создать резервную копию.")
+        except Exception as e:
+            print(f"[AUTO-BACKUP] Ошибка: {e}")
+
+    def _rotate_backups(self):
+        """Оставляет только последние max_auto_backups копий."""
+        try:
+            files = [
+                f for f in os.listdir(self.backup_dir)
+                if f.startswith("auto_backup_") and f.endswith(".db")
+            ]
+            files.sort(
+                key=lambda f: os.path.getmtime(os.path.join(self.backup_dir, f)),
+                reverse=True
+            )
+            max_keep = self.config.get("max_auto_backups", 20)
+            for old in files[max_keep:]:
+                try:
+                    os.remove(os.path.join(self.backup_dir, old))
+                    print(f"[AUTO-BACKUP] Удалён старый бэкап: {old}")
+                except Exception as e:
+                    print(f"[AUTO-BACKUP] Не удалось удалить {old}: {e}")
+        except Exception as e:
+            print(f"[AUTO-BACKUP] Ошибка ротации: {e}")
+
+    def open_backups_folder(self):
+        try:
+            if not os.path.isdir(self.backup_dir):
+                os.makedirs(self.backup_dir, exist_ok=True)
+            if sys.platform == "win32":
+                os.startfile(self.backup_dir)
+            elif sys.platform == "darwin":
+                os.system(f'open "{self.backup_dir}"')
+            else:
+                os.system(f'xdg-open "{self.backup_dir}"')
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось открыть папку: {e}")
 
     # ---------- Импорт ----------
     def import_database(self):
-        """Заменяет текущую базу данных на выбранную из файла."""
         file_path = filedialog.askopenfilename(
             title="Выберите файл базы данных (.db)",
             filetypes=[("Базы данных SQLite", "*.db"), ("Все файлы", "*.*")]
@@ -384,7 +656,6 @@ class MedicalDatabaseApp:
             if not treatment_start_date:
                 messagebox.showerror("Ошибка", "Введите дату начала лечения.")
                 return
-
             if birth_year_str and not Validators.validate_year(birth_year_str):
                 messagebox.showerror("Ошибка", "Год рождения должен быть целым числом от 1900 до 2100.")
                 return
@@ -547,6 +818,11 @@ class MedicalDatabaseApp:
                 return query, params
 
     def on_closing(self):
+        if self._backup_timer_id is not None:
+            try:
+                self.root.after_cancel(self._backup_timer_id)
+            except Exception:
+                pass
         self.db.close()
         self.root.destroy()
 

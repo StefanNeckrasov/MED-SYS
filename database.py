@@ -185,6 +185,24 @@ class Database:
             print("Ошибка безвозвратного удаления пациента:", e)
             raise
 
+    # ---------- Резервное копирование ----------
+    def backup_to(self, target_path):
+        """
+        Безопасно создать резервную копию текущей БД в указанный файл
+        через встроенный механизм sqlite3 backup API.
+        Текущее соединение НЕ закрывается, данные не теряются.
+        """
+        try:
+            target_conn = sqlite3.connect(target_path)
+            try:
+                self.conn.backup(target_conn)
+            finally:
+                target_conn.close()
+            return True
+        except Exception as e:
+            print(f"Ошибка резервного копирования в {target_path}: {e}")
+            return False
+
     def close(self):
         try:
             if self.conn:
