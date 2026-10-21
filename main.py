@@ -61,8 +61,17 @@ class MedicalDatabaseApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Медицинская информационная система")
-        self.root.geometry("1500x950")
         self.root.configure(bg="#f0f0f0")
+
+        # --- Подстраиваемся под разрешение экрана (важно для Win7 с малым экраном) ---
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        win_w = min(1500, screen_w - 40)
+        win_h = min(950, screen_h - 80)
+        x = (screen_w - win_w) // 2
+        y = max(0, (screen_h - win_h) // 2 - 20)
+        self.root.geometry(f"{win_w}x{win_h}+{x}+{y}")
+
         self.db = Database()
         self.show_archived = False
         self.show_deleted = False
@@ -88,9 +97,18 @@ class MedicalDatabaseApp:
         self.reschedule_backup()
 
     def create_widgets(self):
-        # Заголовок
+        # ===== Заголовок с кнопкой настроек справа =====
         self.header_frame = tk.Frame(self.root, bg="#0056b3", height=80)
         self.header_frame.pack(fill=tk.X)
+
+        # ВАЖНО: сначала пакуем кнопку с side=tk.RIGHT — она резервирует место
+        # у правого края, а заголовок потом займёт оставшееся пространство.
+        tk.Button(self.header_frame, text="⚙  Настройки", command=self.open_settings,
+                  bg="#0056b3", fg="white", font=("Segoe UI", 11, "bold"),
+                  activebackground="#004494", activeforeground="white",
+                  relief="flat", bd=0, padx=20, pady=10, cursor="hand2")\
+            .pack(side=tk.RIGHT, padx=(0, 20), pady=20)
+
         tk.Label(self.header_frame, text="МЕДИЦИНСКАЯ ИНФОРМАЦИОННАЯ СИСТЕМА",
                  font=("Segoe UI", 22, "bold"), fg="white", bg="#0056b3").pack(pady=25)
 
@@ -228,16 +246,7 @@ class MedicalDatabaseApp:
 
         tk.Button(control_frame, text="🗑 Удалить", command=self.soft_delete_selected,
                   bg="#dc3545", fg="white", font=("Segoe UI", 10, "bold"),
-                  relief="flat", width=10).pack(side=tk.LEFT, padx=(0, 10))
-
-        # Разделитель
-        ttk.Separator(control_frame, orient=tk.VERTICAL)\
-            .pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10), pady=2)
-
-        # Кнопка настроек
-        tk.Button(control_frame, text="⚙  Настройки", command=self.open_settings,
-                  bg="#495057", fg="white", font=("Segoe UI", 10, "bold"),
-                  relief="flat", width=14).pack(side=tk.LEFT)
+                  relief="flat", width=10).pack(side=tk.LEFT)
 
         # Таблица
         columns = ("ID", "ФИО", "Пол", "Номер истории", "Год рожд.", "Возраст", "Диагноз",
